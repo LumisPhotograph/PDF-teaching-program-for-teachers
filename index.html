@@ -1,0 +1,3564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>授课白板</title>
+<style>
+  :root{
+    --line:#ececec;
+    --text:#1b1b1b;
+    --muted:#8f8f8f;
+    --accent:#2b6cf6;
+    --danger:#e5484d;
+    --radius-base: 16px;
+    --glass-blur: 2px;
+    --glass-alpha: 0.86;
+    --spring: cubic-bezier(.22,1.04,.36,1);
+    --soft: cubic-bezier(.16,1,.3,1);
+    --pop-in:  cubic-bezier(.16,.9,.3,1);
+    --pop-out: cubic-bezier(.4,0,.6,1);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0;padding:0;height:100%;width:100%;
+    overflow:hidden;background:#fff;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    overscroll-behavior:none;
+  }
+  svg{display:block;}
+
+  #viewer{
+    position:fixed;inset:0;background:#fff;overflow:hidden;
+    touch-action:none;cursor:grab;
+  }
+  #viewer.pen{cursor:crosshair;}
+  #viewer.eraser{cursor:none;}
+  #viewer.panning{cursor:grabbing;}
+
+  #content{
+    position:absolute;top:0;left:0;
+    transform-origin:0 0;
+    will-change:transform;
+  }
+  .page{
+    position:absolute;left:0;background:#fff;
+    box-shadow:0 1px 3px rgba(0,0,0,.10), 0 10px 30px rgba(0,0,0,.06);
+    border-radius:2px;overflow:hidden;
+  }
+  .page canvas{display:block;width:100%;height:100%;}
+
+  #ink{position:fixed;top:0;left:0;pointer-events:none;z-index:6;}
+
+  #eraserRing{
+    position:fixed;z-index:8;pointer-events:none;
+    border-radius:50%;
+    border:1.5px solid rgba(20,20,20,.55);
+    background:rgba(43,108,246,.06);
+    box-shadow:0 0 0 1px rgba(255,255,255,.85) inset;
+    transform:translate(-50%,-50%);
+    display:none;
+    will-change:left,top;
+  }
+
+  #dockWrap{
+    position:fixed;left:0;top:0;z-index:30;
+    will-change:transform;
+    transition:transform .42s var(--soft);
+  }
+  #dockWrap.dragging{transition:none;}
+
+  #dock{
+    position:relative;
+    background:rgba(255,255,255, var(--glass-alpha, .86));
+    border:1px solid rgba(255,255,255,.85);
+    border-radius:var(--radius-base);
+    box-shadow:0 14px 44px rgba(0,0,0,.12), 0 2px 6px rgba(0,0,0,.05);
+    -webkit-backdrop-filter: url(#lg-dock) blur(var(--glass-blur, 2px)) saturate(1.5);
+    backdrop-filter: url(#lg-dock) blur(var(--glass-blur, 2px)) saturate(1.5);
+    overflow:hidden;
+    touch-action:none;
+    user-select:none;-webkit-user-select:none;
+    transform-origin:50% 50%;
+    --press: 0;
+    --gx: 50%;
+    --gy: 50%;
+    transition:
+      width .48s var(--spring),
+      height .48s var(--spring),
+      border-radius .48s var(--spring),
+      box-shadow .3s ease,
+      background .18s ease;
+    will-change:transform;
+  }
+  #dock.no-trans{transition:none !important;}
+
+  #glassSheen{
+    position:absolute;inset:0;
+    border-radius:inherit;
+    pointer-events:none;
+    z-index:3;
+    overflow:hidden;
+    background:linear-gradient(158deg,
+      rgba(255,255,255,.42) 0%,
+      rgba(255,255,255,.08) 26%,
+      rgba(255,255,255,0) 46%,
+      rgba(255,255,255,0) 100%);
+    opacity:.42;
+    will-change:box-shadow,opacity;
+  }
+  #glassSheen > i{
+    position:absolute;top:-70%;bottom:-70%;left:0;width:46%;
+    background:linear-gradient(90deg,
+      rgba(255,255,255,0) 0%,
+      rgba(255,255,255,.85) 48%,
+      rgba(255,255,255,.22) 62%,
+      rgba(255,255,255,0) 100%);
+    transform:translateX(260%) skewX(-16deg);
+    opacity:0;
+    will-change:transform,opacity;
+    pointer-events:none;
+  }
+
+  #glassGlow{
+    position:absolute;inset:0;
+    border-radius:inherit;
+    pointer-events:none;
+    z-index:4;
+    overflow:hidden;
+  }
+  #glassGlow::before{
+    content:"";
+    position:absolute;inset:0;
+    border-radius:inherit;
+    background:radial-gradient(80px 60px at var(--gx, 50%) var(--gy, 50%),
+      rgba(255,255,255,.35), rgba(255,255,255,0) 70%);
+    opacity:var(--press, 0);
+    pointer-events:none;
+  }
+  #glassGlow::after{
+    content:"";
+    position:absolute;inset:0;
+    border-radius:inherit;
+    padding:.5px;
+    background:linear-gradient(135deg,
+      rgba(255,255,255,.5), rgba(255,255,255,0) 40%,
+      rgba(255,255,255,0) 60%, rgba(255,255,255,.5));
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;
+    mask:linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    pointer-events:none;
+  }
+
+  #dockInner{
+    position:absolute;left:50%;top:50%;
+    transform:translate(-50%,-50%);
+    transition:opacity .2s ease;
+    will-change:transform,opacity;
+    z-index:8;
+  }
+  #dock.collapsed #dockInner{opacity:0;pointer-events:none;}
+
+  #toolbar{
+    position:relative;
+    display:flex;align-items:center;gap:2px;
+    padding:6px 6px 11px 6px;
+    white-space:nowrap;
+  }
+  #toolbar.vertical{
+    flex-direction:column;
+    padding:6px 11px 6px 6px;
+  }
+
+  .ico{
+    flex:0 0 auto;
+    width:42px;height:42px;
+    display:flex;align-items:center;justify-content:center;
+    border:none;background:transparent;
+    border-radius:calc(var(--radius-base) * 0.75);
+    color:#1b1b1b;cursor:pointer;padding:0;
+    transition:background .2s ease, color .2s ease, transform .18s var(--soft), border-radius .3s ease;
+  }
+  .ico svg{width:22px;height:22px;}
+  .ico:active{transform:scale(.86);}
+  .ico.active{background:rgba(43,108,246,.14);color:var(--accent);}
+
+  #grip{color:#c6c6c6;cursor:grab;}
+  #grip svg{width:18px;height:18px;}
+  #dockWrap.dragging #grip{cursor:grabbing;color:#9d9d9d;}
+
+  .vsep{flex:0 0 auto;width:1px;height:20px;background:rgba(0,0,0,.06);margin:0 3px;}
+  #toolbar.vertical .vsep{width:18px;height:1px;margin:3px 0;}
+
+  #toolSlider, #ptBar{
+    position:absolute;left:0;top:0;
+    width:22px;height:3px;border-radius:2px;
+    background:var(--accent);
+    opacity:0;
+    pointer-events:none;
+    will-change:transform,width,height,opacity;
+    transform:translate3d(0,0,0);
+    transition: width .18s ease, height .18s ease;
+  }
+
+  #fab{
+    position:absolute;left:50%;top:50%;
+    width:54px;height:54px;padding:0;border:none;
+    border-radius:50%;background:transparent;
+    display:flex;align-items:center;justify-content:center;
+    color:var(--accent);cursor:pointer;
+    opacity:0;pointer-events:none;
+    transition:opacity .16s ease;
+    will-change:opacity;
+    z-index:8;
+  }
+  #fab svg{
+    width:22px;height:22px;
+    transform:scale(.55);
+    transition:transform .46s var(--spring);
+  }
+  #dock.collapsed #fab{
+    opacity:1;pointer-events:auto;
+    transition:opacity .26s ease .08s;
+  }
+  #dock.collapsed #fab svg{transform:scale(1);}
+
+  #popover{
+    position:fixed;z-index:29;
+    --pop-x:0px;--pop-y:26px;
+    background:rgba(255,255,255, var(--glass-alpha, .86));
+    border:1px solid rgba(255,255,255,.85);
+    border-radius:var(--radius-base);
+    box-shadow:0 18px 52px rgba(0,0,0,.14), 0 2px 8px rgba(0,0,0,.05);
+    -webkit-backdrop-filter: url(#lg-popover) blur(var(--glass-blur, 2px)) saturate(1.5);
+    backdrop-filter: url(#lg-popover) blur(var(--glass-blur, 2px)) saturate(1.5);
+    padding:calc(11px + var(--radius-base) * .12);
+    opacity:0;pointer-events:none;
+    transform:scale(.82) translate(var(--pop-x), var(--pop-y));
+    transition:
+      opacity .14s var(--pop-out),
+      transform .2s var(--pop-out),
+      border-radius .3s ease,
+      background .18s ease;
+    will-change:transform,opacity;
+    transform-origin:50% 50%;
+    overflow:hidden;
+  }
+  #popover::after{
+    content:"";
+    position:absolute;inset:0;
+    border-radius:inherit;
+    padding:.5px;
+    background:linear-gradient(135deg,
+      rgba(255,255,255,.5), rgba(255,255,255,0) 40%,
+      rgba(255,255,255,0) 60%, rgba(255,255,255,.5));
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;
+    mask:linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    pointer-events:none;
+  }
+  #popover.show{
+    opacity:1;pointer-events:auto;
+    transform:scale(1) translate(0,0);
+    transition:
+      opacity .22s var(--pop-in),
+      transform .4s var(--pop-in),
+      border-radius .3s ease,
+      background .18s ease;
+  }
+
+  .pane{display:none;position:relative;z-index:1;}
+  .pane.show{
+    display:block;
+    animation: paneIn .3s cubic-bezier(.16,.9,.3,1);
+  }
+  @keyframes paneIn{
+    from{ opacity:0; transform: translateY(4px) scale(.985); }
+    to  { opacity:1; transform: translateY(0)   scale(1); }
+  }
+
+  .pen-types{
+    position:relative;
+    display:flex;
+    gap:6px;
+    margin-bottom:13px;
+    padding:1px;
+  }
+  .pt-btn{
+    flex:1 1 0;
+    height:34px;
+    padding:0 6px;
+    border:none;
+    border-radius:calc(var(--radius-base) * 0.75);
+    background:transparent;
+    color:#1b1b1b;
+    font-size:13px;
+    font-family:inherit;
+    letter-spacing:.5px;
+    cursor:pointer;
+    transition:background .2s ease, color .2s ease, transform .18s var(--soft), border-radius .3s ease;
+  }
+  .pt-btn:active{transform:scale(.9);}
+  .pt-btn.active{
+    background:rgba(43,108,246,.14);
+    color:var(--accent);
+  }
+
+  .swatches{
+    display:flex;flex-wrap:wrap;gap:9px;
+    max-width:236px;padding:1px 1px 3px;
+  }
+  .sw{
+    width:21px;height:21px;border-radius:50%;
+    border:none;padding:0;cursor:pointer;
+    background:var(--c,#1b1b1b);
+    box-shadow:0 0 0 1px rgba(0,0,0,.08);
+    transition:transform .18s var(--spring), box-shadow .18s;
+  }
+  .sw:active{transform:scale(.86);}
+  .sw.active{
+    transform:scale(1.08);
+    box-shadow:0 0 0 2px #fff, 0 0 0 3.6px var(--c,#1b1b1b);
+  }
+  .sw.more{
+    background:#f4f4f4;color:#8f8f8f;
+    display:flex;align-items:center;justify-content:center;
+    font-size:15px;line-height:1;font-weight:700;
+  }
+  .sw.more.active{box-shadow:0 0 0 1px rgba(0,0,0,.08);}
+
+  .slider-row{
+    display:flex;align-items:center;gap:10px;
+    margin-top:12px;padding:0 2px;
+  }
+  .slider-row:first-child{margin-top:0;}
+
+  .pane-title{
+    font-size:12px;color:#9a9a9a;letter-spacing:.5px;
+    margin-bottom:10px;padding-left:2px;
+  }
+  .pane-title.mt{margin-top:14px;}
+
+  /* 滑块：轨道 + 蓝色填充 + 玻璃滑钮（滑钮中线呼应工具坞的蓝色指示条） */
+  input[type=range].sl{
+    --pr:0;
+    --tw:26px;
+    --th:20px;
+    --track:8px;
+    --fill:var(--accent);
+    -webkit-appearance:none;appearance:none;
+    flex:1 1 auto;min-width:132px;
+    height:var(--th);margin:0;padding:0;
+    background:transparent;outline:none;cursor:pointer;
+    touch-action:none;
+  }
+  input[type=range].sl:disabled{opacity:.4;cursor:default;}
+
+  input[type=range].sl::-webkit-slider-runnable-track{
+    height:var(--track);
+    border-radius:calc(var(--radius-base) * 0.5);
+    background:linear-gradient(90deg,
+      var(--fill) 0,
+      var(--fill) calc(var(--tw) / 2 + (100% - var(--tw)) * var(--pr)),
+      rgba(0,0,0,.085) 0);
+    box-shadow:inset 0 0 0 .5px rgba(0,0,0,.05);
+  }
+  input[type=range].sl::-moz-range-track{
+    height:var(--track);
+    border-radius:calc(var(--radius-base) * 0.5);
+    background:linear-gradient(90deg,
+      var(--fill) 0,
+      var(--fill) calc(var(--tw) / 2 + (100% - var(--tw)) * var(--pr)),
+      rgba(0,0,0,.085) 0);
+    box-shadow:inset 0 0 0 .5px rgba(0,0,0,.05);
+  }
+
+  input[type=range].sl::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;
+    width:var(--tw);height:var(--th);
+    margin-top:calc((var(--track) - var(--th)) / 2);
+    border-radius:calc(var(--radius-base) * 0.75);
+    border:1px solid rgba(255,255,255,.95);
+    background:
+      linear-gradient(var(--fill),var(--fill)) center / 2px 8px no-repeat,
+      linear-gradient(180deg,#ffffff,#f3f5f8);
+    box-shadow:0 0 0 .5px rgba(0,0,0,.09), 0 2px 7px rgba(0,0,0,.16), 0 8px 16px -8px rgba(0,0,0,.22);
+    cursor:pointer;
+    transition:transform .22s var(--soft), box-shadow .22s ease;
+  }
+  input[type=range].sl::-moz-range-thumb{
+    box-sizing:border-box;
+    width:var(--tw);height:var(--th);
+    border-radius:calc(var(--radius-base) * 0.75);
+    border:1px solid rgba(255,255,255,.95);
+    background:
+      linear-gradient(var(--fill),var(--fill)) center / 2px 8px no-repeat,
+      linear-gradient(180deg,#ffffff,#f3f5f8);
+    box-shadow:0 0 0 .5px rgba(0,0,0,.09), 0 2px 7px rgba(0,0,0,.16), 0 8px 16px -8px rgba(0,0,0,.22);
+    cursor:pointer;
+    transition:transform .22s var(--soft), box-shadow .22s ease;
+  }
+  input[type=range].sl:active::-webkit-slider-thumb{
+    transform:scale(1.07);
+    box-shadow:0 0 0 .5px rgba(0,0,0,.09), 0 0 0 5px rgba(43,108,246,.14), 0 4px 12px rgba(0,0,0,.2);
+  }
+  input[type=range].sl:active::-moz-range-thumb{
+    transform:scale(1.07);
+    box-shadow:0 0 0 .5px rgba(0,0,0,.09), 0 0 0 5px rgba(43,108,246,.14), 0 4px 12px rgba(0,0,0,.2);
+  }
+
+  #clearSlider.danger{--fill:var(--danger);}
+  #paneEraser{min-width:210px;}
+
+  #penPreviewBox{
+    flex:0 0 auto;width:34px;height:34px;
+    display:flex;align-items:center;justify-content:center;
+    border-radius:calc(var(--radius-base) * 0.625);
+    background:rgba(0,0,0,.035);
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.04);
+    transition: border-radius .3s ease;
+  }
+  #penPreview{
+    border-radius:50%;
+    background:var(--c,#1b1b1b);
+    transition:width .12s ease, height .12s ease, background .18s;
+  }
+
+  .val{
+    flex:0 0 auto;min-width:46px;text-align:center;
+    font-size:12px;line-height:1;color:var(--accent);
+    padding:6px 7px;
+    border-radius:calc(var(--radius-base) * 0.5);
+    background:rgba(43,108,246,.1);
+    font-variant-numeric:tabular-nums;
+    transition:border-radius .3s ease;
+  }
+
+  .pane-note{
+    margin-top:10px;font-size:11px;color:#bcbcbc;
+    letter-spacing:.3px;text-align:center;
+  }
+
+  .camera-btn{
+    flex:1 1 auto;
+    height:38px;
+    border:none;
+    border-radius:calc(var(--radius-base) * 0.75);
+    background:rgba(43,108,246,.14);
+    color:var(--accent);
+    font-size:13px;
+    font-family:inherit;
+    letter-spacing:.5px;
+    cursor:pointer;
+    transition:background .2s ease, color .2s ease, transform .18s var(--soft), border-radius .3s ease;
+  }
+  .camera-btn:active{transform:scale(.95);}
+  .fs-btn.exit, .camera-btn.off{
+    background:rgba(0,0,0,.06);
+    color:#6b6b6b;
+  }
+
+  #colorPicker{
+    position:fixed;left:-9999px;top:-9999px;
+    width:1px;height:1px;opacity:0;pointer-events:none;
+  }
+
+  #hint{
+    position:fixed;left:50%;bottom:104px;z-index:40;
+    transform:translateX(-50%) translateY(10px);
+    background:#1b1b1b;color:#fff;
+    font-size:13px;line-height:1;padding:10px 16px;
+    border-radius:calc(var(--radius-base) * 1.25);
+    white-space:nowrap;pointer-events:none;
+    opacity:0;
+    transition:opacity .22s ease, transform .32s var(--soft), border-radius .3s ease;
+  }
+  #hint.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  #empty{
+    position:fixed;inset:0;z-index:25;background:#fff;
+    display:flex;align-items:center;justify-content:center;
+    transition:opacity .38s ease, visibility .38s;
+  }
+  #empty.hidden{opacity:0;visibility:hidden;pointer-events:none;}
+  .empty-card{text-align:center;padding:0 32px;}
+  .empty-title{
+    font-size:24px;font-weight:600;letter-spacing:3px;
+    color:#1b1b1b;margin-bottom:10px;
+  }
+  .empty-sub{font-size:14px;color:var(--muted);margin-bottom:30px;letter-spacing:.5px;}
+  .empty-btn{
+    border:1px solid #e2e2e2;background:#fff;color:var(--text);
+    font-family:inherit;font-size:15px;letter-spacing:1px;
+    padding:13px 34px;
+    border-radius:calc(var(--radius-base) * 0.75);
+    cursor:pointer;
+    box-shadow:0 4px 16px rgba(0,0,0,.06);
+    transition:transform .16s, box-shadow .16s, border-color .16s, border-radius .3s ease;
+  }
+  .empty-btn:active{transform:scale(.97);}
+  .empty-btn:hover{border-color:#cfcfcf;box-shadow:0 6px 22px rgba(0,0,0,.09);}
+
+  #dropzone{
+    position:fixed;inset:0;z-index:100;
+    background:rgba(255,255,255,.9);
+    -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    display:flex;align-items:center;justify-content:center;
+    opacity:0;pointer-events:none;
+    transition:opacity .24s ease;
+  }
+  #dropzone.active{opacity:1;}
+  .drop-inner{
+    padding:46px 62px;
+    border:2px dashed #cfd8ea;
+    border-radius:calc(var(--radius-base) * 1.375);
+    background:rgba(255,255,255,.6);text-align:center;
+  }
+  .drop-title{font-size:18px;font-weight:600;letter-spacing:2px;color:#1b1b1b;}
+  .drop-sub{font-size:13px;color:var(--muted);margin-top:8px;letter-spacing:.6px;}
+
+  #loading{
+    position:fixed;inset:0;z-index:60;background:rgba(255,255,255,.86);
+    display:none;align-items:center;justify-content:center;
+    -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);
+  }
+  #loading.show{display:flex;}
+  .spinner{
+    width:28px;height:28px;border-radius:50%;
+    border:2.5px solid #e6e6e6;border-top-color:var(--accent);
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  #paneSet{
+    max-height:calc(100vh - 150px);
+    max-height:calc(100dvh - 150px);
+    overflow-y:auto;overscroll-behavior:contain;
+    scrollbar-width:none;
+    margin:-4px -8px;padding:4px 8px;
+  }
+  #paneSet::-webkit-scrollbar{display:none;}
+
+  .palm-ring{
+    position:fixed;left:0;top:0;z-index:9;pointer-events:none;
+    display:flex;align-items:center;justify-content:center;
+    border:1.5px solid rgba(43,108,246,.5);
+    background:rgba(43,108,246,.08);
+    box-shadow:0 0 0 1px rgba(255,255,255,.7) inset, 0 8px 28px rgba(43,108,246,.14);
+    color:rgba(43,108,246,.55);
+    opacity:0;
+    animation:palmIn .18s ease forwards;
+    will-change:transform,opacity;
+  }
+  .palm-ring.out{animation:palmOut .22s ease forwards;}
+  .palm-ring svg{width:var(--ic,36px);height:var(--ic,36px);}
+  @keyframes palmIn{from{opacity:0}to{opacity:1}}
+  @keyframes palmOut{from{opacity:1}to{opacity:0}}
+</style>
+</head>
+<body>
+
+  <div id="viewer"><div id="content"></div></div>
+  <canvas id="ink"></canvas>
+  <div id="eraserRing"></div>
+
+  <div id="dockWrap">
+    <div id="dock">
+      <div id="glassSheen"><i id="sheenBar"></i></div>
+      <div id="glassGlow"></div>
+      <div id="dockInner">
+        <div id="toolbar">
+          <button id="grip" class="ico" title="拖动 · 点击折叠">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/>
+              <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+              <circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/>
+            </svg>
+          </button>
+          <span class="vsep"></span>
+          <button id="btnPen" class="ico" title="笔">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16.4 3.6a2.1 2.1 0 0 1 3 3L9.2 16.8l-4.1 1.1 1.1-4.1Z"/>
+              <path d="M13.6 6.4l3 3"/>
+            </svg>
+          </button>
+          <button id="btnEraser" class="ico" title="橡皮">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15.6 3.6 20.4 8.4a1.9 1.9 0 0 1 0 2.7l-6.6 6.6a1.9 1.9 0 0 1-2.7 0L5.6 12.2a1.9 1.9 0 0 1 0-2.7Z"/>
+              <path d="M9.2 7.4l7.2 7.2"/>
+              <path d="M5.5 21.2h13.6"/>
+            </svg>
+          </button>
+          <button id="btnOpen" class="ico" title="打开 PDF">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/>
+              <path d="M14 3v5h5"/>
+            </svg>
+          </button>
+          <button id="btnSet" class="ico" title="设置">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3.1"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
+            </svg>
+          </button>
+          <div id="toolSlider"></div>
+        </div>
+      </div>
+      <button id="fab" aria-label="展开工具栏">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16.4 3.6a2.1 2.1 0 0 1 3 3L9.2 16.8l-4.1 1.1 1.1-4.1Z"/>
+          <path d="M13.6 6.4l3 3"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div id="popover">
+    <div class="pane" id="panePen">
+      <div class="pen-types" id="penTypes">
+        <button class="pt-btn active" data-type="pen">普通</button>
+        <button class="pt-btn" data-type="soft">软笔</button>
+        <button class="pt-btn" data-type="chalk">粉笔</button>
+        <div id="ptBar"></div>
+      </div>
+      <div class="swatches" id="swatches"></div>
+      <div class="slider-row">
+        <svg width="16" height="16" viewBox="0 0 20 20" style="color:#cfcfcf;flex:0 0 auto">
+          <circle cx="10" cy="10" r="2.2" fill="currentColor"/>
+        </svg>
+        <input type="range" class="sl" id="penSize" min="1" max="100" value="25">
+        <div id="penPreviewBox"><div id="penPreview"></div></div>
+      </div>
+    </div>
+
+    <div class="pane" id="paneEraser">
+      <div class="pane-title">清屏</div>
+      <div class="slider-row">
+        <input type="range" class="sl" id="clearSlider" min="0" max="100" step="any" value="0">
+      </div>
+      <div class="pane-note">滑至最右端松手即可清屏</div>
+    </div>
+
+    <div class="pane" id="paneSet">
+      <div class="pane-title">功能栏大小</div>
+      <div class="slider-row">
+        <input type="range" class="sl" id="dockScaleSlider" min="80" max="145" value="100">
+        <span class="val" id="dockScaleVal">100%</span>
+      </div>
+      <div class="pane-title mt">圆角弧度</div>
+      <div class="slider-row">
+        <input type="range" class="sl" id="radiusSlider" min="0" max="250" value="100">
+        <span class="val" id="radiusVal">100%</span>
+      </div>
+      <div class="pane-title mt">毛玻璃透明度</div>
+      <div class="slider-row">
+        <input type="range" class="sl" id="glassAlphaSlider" min="50" max="100" value="86">
+        <span class="val" id="glassAlphaVal">86%</span>
+      </div>
+      <div class="pane-title mt">虚化程度</div>
+      <div class="slider-row">
+        <input type="range" class="sl" id="glassBlurSlider" min="0" max="20" value="2">
+        <span class="val" id="glassBlurVal">2px</span>
+      </div>
+      <div class="pane-title mt">折射高度</div>
+      <div class="slider-row">
+        <input type="range" class="sl" id="refractHeightSlider" min="0" max="30" value="12">
+        <span class="val" id="refractHeightVal">12</span>
+      </div>
+      <div class="pane-title mt">折射强度</div>
+      <div class="slider-row">
+        <input type="range" class="sl" id="refractAmountSlider" min="0" max="60" value="24">
+        <span class="val" id="refractAmountVal">24</span>
+      </div>
+      <div class="pane-title mt">手掌擦除</div>
+      <div class="slider-row">
+        <button id="palmBtn" class="camera-btn">手掌擦除：开启</button>
+      </div>
+      <div class="slider-row">
+        <input type="range" class="sl" id="palmSizeSlider" min="24" max="160" value="56">
+        <span class="val" id="palmSizeVal">56px</span>
+      </div>
+      <div class="pane-note">触点大于该尺寸，或三指同时按下</div>
+      <div class="pane-title mt">全屏显示</div>
+      <div class="slider-row">
+        <button id="fsBtn" class="camera-btn fs-btn">进入全屏</button>
+      </div>
+      <div class="pane-title mt">拍照</div>
+      <div class="slider-row">
+        <button id="cameraBtn" class="camera-btn">拍照并添加为页面</button>
+      </div>
+    </div>
+  </div>
+
+  <input type="color" id="colorPicker" value="#2b6cf6">
+  <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+
+  <div id="hint"></div>
+
+  <div id="empty">
+    <div class="empty-card">
+      <div class="empty-title">授课白板</div>
+      <div class="empty-sub">打开或拖入一个 PDF 文件开始授课</div>
+      <button class="empty-btn" id="emptyOpen">打开 PDF</button>
+    </div>
+  </div>
+
+  <div id="dropzone">
+    <div class="drop-inner">
+      <div class="drop-title">释放以打开 PDF</div>
+      <div class="drop-sub">支持拖拽文件到窗口任意位置</div>
+    </div>
+  </div>
+
+  <div id="loading"><div class="spinner"></div></div>
+
+  <input type="file" id="fileInput" accept="application/pdf" hidden>
+
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script>
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  }
+  </script>
+
+  <script>
+  (function () {
+    'use strict';
+
+    /* ======================= 元素 ======================= */
+    var viewer    = document.getElementById('viewer');
+    var content   = document.getElementById('content');
+    var ink       = document.getElementById('ink');
+    var inkCtx    = ink.getContext('2d');
+    var ring      = document.getElementById('eraserRing');
+
+    var dockWrap  = document.getElementById('dockWrap');
+    var dockEl    = document.getElementById('dock');
+    var dockInner = document.getElementById('dockInner');
+    var glassSheen= document.getElementById('glassSheen');
+    var sheenBar  = document.getElementById('sheenBar');
+    var toolbar   = document.getElementById('toolbar');
+    var toolSlider= document.getElementById('toolSlider');
+    var fab       = document.getElementById('fab');
+    var grip      = document.getElementById('grip');
+    var btnPen    = document.getElementById('btnPen');
+    var btnEraser = document.getElementById('btnEraser');
+    var btnOpen   = document.getElementById('btnOpen');
+    var btnSet    = document.getElementById('btnSet');
+
+    var popover   = document.getElementById('popover');
+    var panePen   = document.getElementById('panePen');
+    var paneEraser= document.getElementById('paneEraser');
+    var paneSet   = document.getElementById('paneSet');
+    var penTypes  = document.getElementById('penTypes');
+    var swatchRow = document.getElementById('swatches');
+    var penSlider = document.getElementById('penSize');
+    var penPrev   = document.getElementById('penPreview');
+    var clearSlider = document.getElementById('clearSlider');
+    var dockScaleSlider = document.getElementById('dockScaleSlider');
+    var dockScaleVal = document.getElementById('dockScaleVal');
+    var radiusSlider = document.getElementById('radiusSlider');
+    var radiusVal = document.getElementById('radiusVal');
+    var glassAlphaSlider = document.getElementById('glassAlphaSlider');
+    var glassAlphaVal = document.getElementById('glassAlphaVal');
+    var glassBlurSlider = document.getElementById('glassBlurSlider');
+    var glassBlurVal = document.getElementById('glassBlurVal');
+    var refractHeightSlider = document.getElementById('refractHeightSlider');
+    var refractHeightVal = document.getElementById('refractHeightVal');
+    var refractAmountSlider = document.getElementById('refractAmountSlider');
+    var refractAmountVal = document.getElementById('refractAmountVal');
+    var colorPicker = document.getElementById('colorPicker');
+    var cameraBtn = document.getElementById('cameraBtn');
+    var cameraInput = document.getElementById('cameraInput');
+    var fsBtn = document.getElementById('fsBtn');
+    var penBar = document.getElementById('ptBar');
+    var palmBtn = document.getElementById('palmBtn');
+    var palmSizeSlider = document.getElementById('palmSizeSlider');
+    var palmSizeVal = document.getElementById('palmSizeVal');
+
+    var emptyEl   = document.getElementById('empty');
+    var emptyOpen = document.getElementById('emptyOpen');
+    var fileInput = document.getElementById('fileInput');
+    var loadingEl = document.getElementById('loading');
+    var hintEl    = document.getElementById('hint');
+    var dropzone  = document.getElementById('dropzone');
+
+    /* ======================= 状态 ======================= */
+    var S = {
+      pdf: null,
+      pages: [],
+      baseW: 0,
+      totalH: 0,
+      zoom: 1,
+      fitZoom: 1,
+      tx: 0, ty: 0,
+
+      tool: null,
+      penType: 'pen',
+      penColor: '#1b1b1b',
+      penSize: 4.5,
+      eraserSize: 30,
+      penSliderVal: 25,
+
+      dockScale: 1,
+      radiusScale: 1,
+      glassAlpha: 0.86,
+      glassBlur: 2,
+      refractHeight: 12,
+      refractAmount: 24,
+      palmErase: true,
+      palmThreshold: 56,
+      strokes: [],
+
+      fileKey: '',
+      currentPage: 0
+    };
+
+    var palette = ['#1b1b1b', '#e5484d', '#2563eb', '#16a34a', '#f59e0b', '#7c3aed'];
+
+    var dockX = 0, dockY = 0;
+    var dockW = 229, dockH = 54;
+    var collapsed = false;
+    var collapseTrT = null;
+    var currentSide = 'bottom';
+
+    var rafPending = false;
+    var rerenderTimer = null;
+
+    /* ============================================================
+       液态玻璃折射滤镜
+       ============================================================ */
+    var lgDefsSvg = null;
+    function ensureLgDefs() {
+      if (lgDefsSvg) return lgDefsSvg;
+      var NS = 'http://www.w3.org/2000/svg';
+      lgDefsSvg = document.createElementNS(NS, 'svg');
+      lgDefsSvg.id = 'lg-defs';
+      lgDefsSvg.setAttribute('width', '0');
+      lgDefsSvg.setAttribute('height', '0');
+      lgDefsSvg.setAttribute('aria-hidden', 'true');
+      lgDefsSvg.style.position = 'absolute';
+      lgDefsSvg.style.pointerEvents = 'none';
+      document.body.appendChild(lgDefsSvg);
+      return lgDefsSvg;
+    }
+
+    function lensMap(w, h, r, edge) {
+      w = Math.round(w); h = Math.round(h);
+      var c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      var g = c.getContext('2d');
+      var img = g.createImageData(w, h), d = img.data;
+      new Uint32Array(d.buffer).fill(0xFF808080);
+      for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
+        var px = x + .5 - w / 2, py = y + .5 - h / 2;
+        var qx = Math.abs(px) - (w / 2 - r), qy = Math.abs(py) - (h / 2 - r);
+        if (qx < 0 && qy < 0 && edge <= r) continue;
+        var mx = Math.max(qx, 0), my = Math.max(qy, 0), len = Math.sqrt(mx * mx + my * my);
+        var dist = r - len - Math.min(Math.max(qx, qy), 0);
+        var nx, ny;
+        if (len > 0) { nx = mx / len; ny = my / len; }
+        else if (qx > qy) { nx = 1; ny = 0; }
+        else { nx = 0; ny = 1; }
+        nx *= px < 0 ? -1 : 1;
+        ny *= py < 0 ? -1 : 1;
+        var m = 0;
+        if (dist > 0 && dist < edge) {
+          var t = 1 - dist / edge;
+          m = 1 - Math.sqrt(1 - t * t);
+        }
+        var k = (y * w + x) * 4;
+        d[k] = 128 - nx * m * 127;
+        d[k + 1] = 128 - ny * m * 127;
+        d[k + 2] = 128;
+        d[k + 3] = 255;
+      }
+      g.putImageData(img, 0, 0);
+      return c.toDataURL();
+    }
+
+    var refractCache = {};
+    function setRefraction(id, w, h, r, edge, amount) {
+      w = Math.max(1, Math.round(w));
+      h = Math.max(1, Math.round(h));
+      r = Math.max(1, Math.min(r, w / 2, h / 2));
+      edge = Math.max(0.5, edge);
+      amount = Math.max(0, amount);
+      var key = w + 'x' + h + 'x' + r.toFixed(2) + 'x' + edge.toFixed(2) + 'x' + amount.toFixed(2);
+      if (refractCache[id] === key) return;
+      refractCache[id] = key;
+
+      var svg = ensureLgDefs();
+      var old = document.getElementById(id);
+      if (old) old.remove();
+
+      var s = amount * 2;
+      var url = lensMap(w, h, r, edge);
+
+      function ch(name, scale, m) {
+        return '<feDisplacementMap in="SourceGraphic" in2="map" scale="' + scale.toFixed(2) + '" xChannelSelector="R" yChannelSelector="G" result="d' + name + '"/>' +
+          '<feColorMatrix in="d' + name + '" type="matrix" values="' + m + '" result="' + name + '"/>';
+      }
+      svg.insertAdjacentHTML('beforeend',
+        '<filter id="' + id + '" x="0" y="0" width="' + w + '" height="' + h + '" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">' +
+        '<feImage href="' + url + '" x="0" y="0" width="' + w + '" height="' + h + '" preserveAspectRatio="none" result="map"/>' +
+        ch('r', s, '1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0') +
+        ch('g', s * 1.08, '0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0') +
+        ch('b', s * 1.16, '0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0') +
+        '<feComposite in="r" in2="g" operator="arithmetic" k2="1" k3="1" result="rg"/>' +
+        '<feComposite in="rg" in2="b" operator="arithmetic" k2="1" k3="1"/></filter>');
+    }
+
+    function updateDockRefraction() {
+      var w = dockEl.offsetWidth;
+      var h = dockEl.offsetHeight;
+      if (w <= 0 || h <= 0) return;
+      var r = collapsed
+        ? w / 2
+        : Math.min(16 * S.radiusScale * S.dockScale, w / 2, h / 2);
+      var edge = Math.min(S.refractHeight * S.dockScale, r * 0.85);
+      var amount = S.refractAmount * S.dockScale;
+      setRefraction('lg-dock', w, h, r, edge, amount);
+    }
+
+    function updatePopoverRefraction() {
+      var w = popover.offsetWidth;
+      var h = popover.offsetHeight;
+      if (w <= 0 || h <= 0) return;
+      var r = Math.min(16 * S.radiusScale, w / 2, h / 2);
+      var edge = Math.min(S.refractHeight, r * 0.85);
+      var amount = S.refractAmount;
+      setRefraction('lg-popover', w, h, r, edge, amount);
+    }
+
+    var dockRefractRaf = null;
+    function scheduleDockRefraction() {
+      if (dockRefractRaf) return;
+      dockRefractRaf = requestAnimationFrame(function () {
+        dockRefractRaf = null;
+        updateDockRefraction();
+      });
+    }
+
+    var popoverRefractRaf = null;
+    function schedulePopoverRefraction() {
+      if (popoverRefractRaf) return;
+      popoverRefractRaf = requestAnimationFrame(function () {
+        popoverRefractRaf = null;
+        updatePopoverRefraction();
+      });
+    }
+
+    /* ============================================================
+       Cookie 持久化
+       ============================================================ */
+    var COOKIE_KEY = 'whiteboard_settings_v1';
+    var PAGE_COOKIE_KEY = 'whiteboard_pages_v1';
+
+    function setCookie(name, value, days) {
+      var d = new Date();
+      d.setTime(d.getTime() + days * 24 * 60 * 60 * 1000);
+      document.cookie = name + '=' + encodeURIComponent(value) +
+        ';expires=' + d.toUTCString() + ';path=/;SameSite=Lax';
+    }
+
+    function getCookie(name) {
+      var n = name + '=';
+      var parts = document.cookie ? document.cookie.split(';') : [];
+      for (var i = 0; i < parts.length; i++) {
+        var c = parts[i].trim();
+        if (c.indexOf(n) === 0) return decodeURIComponent(c.substring(n.length));
+      }
+      return null;
+    }
+
+    function saveSettings() {
+      var data = {
+        v: 3,
+        dockScale: S.dockScale,
+        radiusScale: S.radiusScale,
+        glassAlpha: S.glassAlpha,
+        glassBlur: S.glassBlur,
+        refractHeight: S.refractHeight,
+        refractAmount: S.refractAmount,
+        palmErase: S.palmErase,
+        palmThreshold: S.palmThreshold,
+        penType: S.penType,
+        penColor: S.penColor,
+        penSliderVal: S.penSliderVal,
+        palette: palette,
+        tool: S.tool,
+        currentSide: currentSide,
+        dockX: dockX,
+        dockY: dockY,
+        collapsed: collapsed
+      };
+      try { setCookie(COOKIE_KEY, JSON.stringify(data), 365); } catch (e) {}
+    }
+
+    var saveTimer = null;
+    function scheduleSave() {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveSettings, 300);
+    }
+
+    function savePageIndex() {
+      if (!S.fileKey) return;
+      var raw = getCookie(PAGE_COOKIE_KEY);
+      var data = {};
+      if (raw) { try { data = JSON.parse(raw); } catch (e) {} }
+      data[S.fileKey] = S.currentPage;
+      var keys = Object.keys(data);
+      if (keys.length > 30) delete data[keys[0]];
+      try { setCookie(PAGE_COOKIE_KEY, JSON.stringify(data), 365); } catch (e) {}
+    }
+
+    function restorePageIndex() {
+      if (!S.fileKey) return 0;
+      var raw = getCookie(PAGE_COOKIE_KEY);
+      if (!raw) return 0;
+      try {
+        var data = JSON.parse(raw);
+        var v = data[S.fileKey];
+        if (typeof v === 'number' && v >= 0 && v < S.pages.length) return v;
+      } catch (e) {}
+      return 0;
+    }
+
+    var savedPos = { x: null, y: null };
+    var savedPosValid = false;
+
+    function loadSettings() {
+      var raw = getCookie(COOKIE_KEY);
+      if (!raw) return;
+      try {
+        var d = JSON.parse(raw);
+        if (typeof d.dockScale === 'number' && d.dockScale >= 0.5 && d.dockScale <= 2) {
+          S.dockScale = d.dockScale;
+        }
+        if (typeof d.radiusScale === 'number' && d.radiusScale >= 0 && d.radiusScale <= 3) {
+          S.radiusScale = d.radiusScale;
+        }
+        if (typeof d.glassAlpha === 'number' && d.glassAlpha >= 0.3 && d.glassAlpha <= 1) {
+          S.glassAlpha = d.glassAlpha;
+        }
+        if (typeof d.glassBlur === 'number' && d.glassBlur >= 0) {
+          S.glassBlur = Math.min(d.glassBlur, 20);
+        }
+        if (typeof d.refractHeight === 'number' && d.refractHeight >= 0 && d.refractHeight <= 60) {
+          S.refractHeight = d.refractHeight;
+        }
+        if (typeof d.refractAmount === 'number' && d.refractAmount >= 0 && d.refractAmount <= 120) {
+          S.refractAmount = d.refractAmount;
+        }
+        if (typeof d.palmErase === 'boolean') S.palmErase = d.palmErase;
+        if (typeof d.palmThreshold === 'number' && d.palmThreshold >= 20 && d.palmThreshold <= 160) {
+          S.palmThreshold = d.palmThreshold;
+        }
+        if (d.penType === 'pen' || d.penType === 'soft' || d.penType === 'chalk') {
+          S.penType = d.penType;
+        }
+        if (typeof d.penColor === 'string' && d.penColor.length > 0) {
+          S.penColor = d.penColor;
+        }
+        if (typeof d.penSliderVal === 'number' && d.penSliderVal >= 1 && d.penSliderVal <= 100) {
+          S.penSliderVal = d.penSliderVal;
+        }
+        if (Array.isArray(d.palette) && d.palette.length > 0) {
+          var clean = [];
+          for (var i = 0; i < d.palette.length && i < 20; i++) {
+            if (typeof d.palette[i] === 'string') clean.push(d.palette[i]);
+          }
+          if (clean.length) palette = clean;
+        }
+        if (d.tool === 'pen' || d.tool === 'eraser' || d.tool === null) {
+          S.tool = d.tool;
+        }
+        if (d.currentSide === 'left' || d.currentSide === 'right' || d.currentSide === 'bottom') {
+          currentSide = d.currentSide;
+        }
+        if (typeof d.collapsed === 'boolean') {
+          collapsed = d.collapsed;
+        }
+        if (typeof d.dockX === 'number' && typeof d.dockY === 'number' &&
+            isFinite(d.dockX) && isFinite(d.dockY)) {
+          savedPos.x = d.dockX;
+          savedPos.y = d.dockY;
+          savedPosValid = true;
+        }
+      } catch (e) {}
+    }
+
+    /* ======================= 工具函数 ======================= */
+    function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+
+    var hintTimer = null;
+    function showHint(text, ms) {
+      hintEl.textContent = text;
+      hintEl.classList.add('show');
+      clearTimeout(hintTimer);
+      if (ms) hintTimer = setTimeout(hideHint, ms);
+    }
+    function hideHint() {
+      hintEl.classList.remove('show');
+      clearTimeout(hintTimer);
+    }
+
+    /* ======================= 坐标转换 ======================= */
+    function screenToPage(sx, sy) {
+      var z = S.zoom, tx = S.tx, ty = S.ty;
+      var cx = (sx - tx) / z;
+      var cy = (sy - ty) / z;
+      if (cx < 0 || cx > S.baseW) return null;
+      for (var i = 0; i < S.pages.length; i++) {
+        var p = S.pages[i];
+        if (cy >= p.offsetY && cy < p.offsetY + p.h) {
+          return { page: i, x: cx, y: cy - p.offsetY };
+        }
+      }
+      return null;
+    }
+
+    /* ======================= 渲染调度 ======================= */
+    function requestRender() {
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(function () {
+        rafPending = false;
+        applyTransform();
+        drawInk();
+        updatePageVisibility();
+      });
+    }
+
+    function applyTransform() {
+      content.style.transform =
+        'translate3d(' + S.tx + 'px,' + S.ty + 'px,0) scale(' + S.zoom + ')';
+    }
+
+    function clampPan() {
+      var vw = window.innerWidth, vh = window.innerHeight;
+      var cw = S.baseW * S.zoom;
+      var ch = S.totalH * S.zoom;
+      if (cw <= vw) S.tx = (vw - cw) / 2;
+      else S.tx = Math.min(0, Math.max(vw - cw, S.tx));
+      if (ch <= vh) S.ty = (vh - ch) / 2;
+      else S.ty = Math.min(0, Math.max(vh - ch, S.ty));
+    }
+
+    /* ============================================================
+       墨迹绘制
+       ============================================================ */
+    var inkCache    = document.createElement('canvas');
+    var inkCacheCtx = inkCache.getContext('2d');
+    var inkCacheDirty = true;
+    var lastViewKey = '';
+    var inkRaf = null;
+    var activeStroke = null;
+
+    function computeViewKey() {
+      return S.zoom.toFixed(4) + '|' +
+             S.tx.toFixed(2) + '|' + S.ty.toFixed(2) + '|' +
+             S.baseW.toFixed(2) + '|' + S.pages.length;
+    }
+
+    function invalidateInkCache() { inkCacheDirty = true; }
+
+    function scheduleDrawInk() {
+      if (inkRaf) return;
+      inkRaf = requestAnimationFrame(function () {
+        inkRaf = null;
+        drawInk();
+      });
+    }
+
+    function strokeBBox(st) {
+      var bb = st.bb;
+      if (bb) return bb;
+      var pts = st.pts, x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+      for (var i = 0; i < pts.length; i++) {
+        var p = pts[i];
+        if (p.x < x0) x0 = p.x;
+        if (p.x > x1) x1 = p.x;
+        if (p.y < y0) y0 = p.y;
+        if (p.y > y1) y1 = p.y;
+      }
+      bb = st.bb = { x0: x0, y0: y0, x1: x1, y1: y1 };
+      return bb;
+    }
+
+    function rebuildInkCache(dpr, w, h) {
+      var ctx = inkCacheCtx;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      if (!S.strokes.length || !S.pages.length) return;
+
+      var z = S.zoom, tx = S.tx, ty = S.ty;
+      var baseW = S.baseW;
+
+      var byPage = {};
+      for (var i = 0; i < S.strokes.length; i++) {
+        var s = S.strokes[i];
+        if (s === activeStroke) continue;
+        if (!byPage[s.page]) byPage[s.page] = [];
+        byPage[s.page].push(s);
+      }
+
+      for (var key in byPage) {
+        if (!Object.prototype.hasOwnProperty.call(byPage, key)) continue;
+        var pi = parseInt(key, 10);
+        var p = S.pages[pi];
+        if (!p) continue;
+
+        var top = ty + z * p.offsetY;
+        var bottom = top + z * p.h;
+        if (bottom < -40 || top > h + 40) continue;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(tx, top, baseW * z, p.h * z);
+        ctx.clip();
+
+        var list = byPage[key];
+        var vx0 = (0 - tx) / z, vx1 = (w - tx) / z;
+        var vy0 = (0 - top) / z, vy1 = (h - top) / z;
+        for (var k = 0; k < list.length; k++) {
+          var sk = list[k];
+          var bb = strokeBBox(sk);
+          var mg = sk.size * 2.2 + 2;
+          if (bb.x1 + mg < vx0 || bb.x0 - mg > vx1 || bb.y1 + mg < vy0 || bb.y0 - mg > vy1) continue;
+          drawStroke(ctx, sk, z, tx, top);
+        }
+        ctx.restore();
+      }
+    }
+
+    function drawInk() {
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var w = window.innerWidth, h = window.innerHeight;
+      var pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+
+      if (ink.width !== pw || ink.height !== ph) {
+        ink.width = pw; ink.height = ph;
+        ink.style.width = w + 'px';
+        ink.style.height = h + 'px';
+      }
+      if (inkCache.width !== pw || inkCache.height !== ph) {
+        inkCache.width = pw; inkCache.height = ph;
+        inkCacheDirty = true;
+      }
+
+      var key = computeViewKey();
+      if (key !== lastViewKey) {
+        lastViewKey = key;
+        inkCacheDirty = true;
+      }
+
+      if (inkCacheDirty) {
+        rebuildInkCache(dpr, w, h);
+        inkCacheDirty = false;
+      }
+
+      var ctx = inkCtx;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(inkCache, 0, 0, w, h);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      if (activeStroke && S.pages[activeStroke.page]) {
+        var p = S.pages[activeStroke.page];
+        var top = S.ty + S.zoom * p.offsetY;
+        var bottom = top + S.zoom * p.h;
+        if (bottom > -40 && top < h + 40) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(S.tx, top, S.baseW * S.zoom, p.h * S.zoom);
+          ctx.clip();
+          drawStroke(ctx, activeStroke, S.zoom, S.tx, top);
+          ctx.restore();
+        }
+      }
+    }
+
+    function hash(x, y) {
+      var n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+      return n - Math.floor(n);
+    }
+
+    function buildPath(ctx, pts, z, ox, oy) {
+      ctx.beginPath();
+      ctx.moveTo(ox + z * pts[0].x, oy + z * pts[0].y);
+      if (pts.length === 2) {
+        ctx.lineTo(ox + z * pts[1].x, oy + z * pts[1].y);
+        return;
+      }
+      for (var i = 1; i < pts.length - 1; i++) {
+        var c = pts[i], n = pts[i + 1];
+        var mx = (c.x + n.x) * 0.5, my = (c.y + n.y) * 0.5;
+        ctx.quadraticCurveTo(ox + z * c.x, oy + z * c.y, ox + z * mx, oy + z * my);
+      }
+      var lp = pts[pts.length - 1], pp = pts[pts.length - 2];
+      ctx.quadraticCurveTo(ox + z * pp.x, oy + z * pp.y, ox + z * lp.x, oy + z * lp.y);
+    }
+
+    function drawStroke(ctx, st, z, ox, oy) {
+      var pts = st.pts;
+      var lw = Math.max(0.4, st.size * z);
+      var type = st.type || 'pen';
+      var color = st.color;
+
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = lw;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      if (type === 'soft') {
+        drawSoft(ctx, pts, lw, color, z, ox, oy);
+      } else if (type === 'chalk') {
+        drawChalk(ctx, pts, lw, color, z, ox, oy);
+      } else {
+        drawNormal(ctx, pts, lw, color, z, ox, oy);
+      }
+    }
+
+    function drawNormal(ctx, pts, lw, color, z, ox, oy) {
+      if (pts.length === 1) {
+        ctx.beginPath();
+        ctx.arc(ox + z * pts[0].x, oy + z * pts[0].y, Math.max(0.5, lw / 2), 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
+      buildPath(ctx, pts, z, ox, oy);
+      ctx.stroke();
+    }
+
+    function drawSoft(ctx, pts, lw, color, z, ox, oy) {
+      if (pts.length === 1) {
+        var cx = ox + z * pts[0].x, cy = oy + z * pts[0].y;
+        for (var i = 3; i >= 1; i--) {
+          ctx.globalAlpha = 0.18;
+          ctx.beginPath();
+          ctx.arc(cx, cy, Math.max(0.5, lw * (0.5 + i * 0.35)), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 0.55;
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(0.5, lw / 2), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      buildPath(ctx, pts, z, ox, oy);
+      for (var k = 3; k >= 1; k--) {
+        ctx.globalAlpha = 0.18;
+        ctx.lineWidth = lw * (1 + k * 0.35);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = lw;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    function drawChalk(ctx, pts, lw, color, z, ox, oy) {
+      if (pts.length === 1) {
+        var cx2 = ox + z * pts[0].x, cy2 = oy + z * pts[0].y;
+        ctx.globalAlpha = 0.55;
+        ctx.beginPath();
+        ctx.arc(cx2, cy2, Math.max(0.5, lw / 2), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 0.35;
+        for (var i = 0; i < 6; i++) {
+          var h1 = hash(cx2 * 0.1 + i * 1.7, cy2 * 0.13 + i * 0.9);
+          var h2 = hash(cx2 * 0.07 + i * 3.1, cy2 * 0.09 + 5.2);
+          var r = 0.5 + h1 * 1.5;
+          ctx.fillRect(
+            cx2 + (h1 - 0.5) * lw * 1.4,
+            cy2 + (h2 - 0.5) * lw * 1.4,
+            r, r
+          );
+        }
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      buildPath(ctx, pts, z, ox, oy);
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = lw;
+      ctx.stroke();
+
+      ctx.globalAlpha = 0.35;
+      for (var j = 0; j < pts.length - 1; j++) {
+        var p1 = pts[j], p2 = pts[j + 1];
+        var dx = (p2.x - p1.x) * z, dy = (p2.y - p1.y) * z;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        var steps = Math.min(20, Math.max(1, Math.floor(dist / 2)));
+        for (var k = 0; k < steps; k++) {
+          var t = k / steps;
+          var bx = ox + z * (p1.x + (p2.x - p1.x) * t);
+          var by = oy + z * (p1.y + (p2.y - p1.y) * t);
+          var h1 = hash(bx * 0.1, by * 0.1);
+          var h2 = hash(bx * 0.13 + 5, by * 0.11 + 7);
+          if (h1 < 0.72) {
+            var r2 = 0.5 + h2 * 1.4;
+            ctx.fillRect(
+              bx + (h1 - 0.5) * lw * 1.2,
+              by + (h2 - 0.5) * lw * 1.2,
+              r2, r2
+            );
+          }
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    /* ======================= PDF / 图片 页面渲染 ======================= */
+    function updatePageVisibility() {
+      if (!S.pages.length) return;
+      var vh = window.innerHeight;
+      var z = S.zoom, ty = S.ty;
+      for (var i = 0; i < S.pages.length; i++) {
+        var p = S.pages[i];
+        var top = ty + z * p.offsetY;
+        var bottom = top + z * p.h;
+        var vis = (bottom > -500) && (top < vh + 500);
+        p.el.style.visibility = vis ? 'visible' : 'hidden';
+        if (vis && !p.rendered && !p.rendering) startRender(p);
+      }
+    }
+
+    function startRender(p) {
+      if (p.rendering) return;
+      p.rendering = true;
+      var token = ++p.token;
+
+      var taskPromise;
+      if (p.type === 'image') {
+        taskPromise = renderImagePage(p, token);
+      } else {
+        taskPromise = renderPage(p, token);
+      }
+
+      taskPromise.then(function () {
+        p.rendering = false;
+        if (token === p.token) p.rendered = true;
+        else if (isVisible(p)) startRender(p);
+      }).catch(function (err) {
+        p.rendering = false;
+        if (err && err.name !== 'RenderingCancelledException') console.warn('[render]', err);
+      });
+    }
+
+    function isVisible(p) {
+      var vh = window.innerHeight;
+      var top = S.ty + S.zoom * p.offsetY;
+      var bottom = top + S.zoom * p.h;
+      return (bottom > -500) && (top < vh + 500);
+    }
+
+    function renderImagePage(p, token) {
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var scale = S.zoom * dpr;
+      var maxPx = 2600;
+      if (S.baseW * scale > maxPx) scale = maxPx / S.baseW;
+      if (scale < 0.05) scale = 0.05;
+
+      var cw = Math.max(1, Math.floor(S.baseW * scale));
+      var ch = Math.max(1, Math.floor(p.h * scale));
+
+      if (p.canvas.width !== cw) p.canvas.width = cw;
+      if (p.canvas.height !== ch) p.canvas.height = ch;
+
+      var ctx = p.canvas.getContext('2d');
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, cw, ch);
+      try { ctx.drawImage(p.image, 0, 0, cw, ch); } catch (e) {}
+      return Promise.resolve();
+    }
+
+    function renderPage(p, token) {
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var scale = S.zoom * dpr;
+      var maxPx = 2600;
+      if (S.baseW * scale > maxPx) scale = maxPx / S.baseW;
+      if (scale < 0.05) scale = 0.05;
+
+      var vp = p.pdfPage.getViewport({ scale: scale });
+      var cw = Math.max(1, Math.floor(vp.width));
+      var ch = Math.max(1, Math.floor(vp.height));
+
+      if (p.canvas.width !== cw) p.canvas.width = cw;
+      if (p.canvas.height !== ch) p.canvas.height = ch;
+
+      var ctx = p.canvas.getContext('2d', { alpha: false });
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, cw, ch);
+
+      var task = p.pdfPage.render({ canvasContext: ctx, viewport: vp });
+      p.renderTask = task;
+      return task.promise.then(function () {
+        p.renderTask = null;
+      }, function (e) {
+        p.renderTask = null;
+        throw e;
+      });
+    }
+
+    function scheduleRerender() {
+      clearTimeout(rerenderTimer);
+      rerenderTimer = setTimeout(function () {
+        for (var i = 0; i < S.pages.length; i++) {
+          S.pages[i].rendered = false;
+          S.pages[i].token++;
+        }
+        updatePageVisibility();
+      }, 260);
+    }
+
+    /* ======================= 打开 PDF ======================= */
+    function setLoading(on) { loadingEl.classList.toggle('show', !!on); }
+
+    function loadPDF(file) {
+      if (typeof pdfjsLib === 'undefined') {
+        showHint('PDF 组件加载失败', 2000);
+        return;
+      }
+      S.fileKey = (file.name || 'pdf') + '_' + (file.size || 0);
+      setLoading(true);
+      var reader = new FileReader();
+      reader.onload = function () {
+        var task = pdfjsLib.getDocument({ data: new Uint8Array(reader.result) });
+        task.promise.then(function (pdf) {
+          S.pdf = pdf;
+          return buildPages();
+        }).then(function () {
+          setLoading(false);
+          emptyEl.classList.add('hidden');
+          hidePopover();
+          tryFullscreen();
+          S.currentPage = 0;
+          var saved = restorePageIndex();
+          if (saved > 0) goToPage(saved);
+        }).catch(function (err) {
+          console.error(err);
+          setLoading(false);
+          showHint('无法打开该 PDF 文件', 2200);
+        });
+      };
+      reader.onerror = function () {
+        setLoading(false);
+        showHint('文件读取失败', 2000);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function buildPages() {
+      content.innerHTML = '';
+      S.pages = [];
+      S.strokes = [];
+      activeStroke = null;
+      invalidateInkCache();
+
+      return S.pdf.getPage(1).then(function (first) {
+        var v0 = first.getViewport({ scale: 1 });
+        var baseW = v0.width;
+        S.baseW = baseW;
+
+        var total = S.pdf.numPages;
+        var chain = Promise.resolve();
+
+        for (var i = 1; i <= total; i++) {
+          (function (idx) {
+            chain = chain.then(function () {
+              var pget = (idx === 1) ? Promise.resolve(first) : S.pdf.getPage(idx);
+              return pget.then(function (pg) {
+                var vp = pg.getViewport({ scale: 1 });
+                var h = baseW * (vp.height / vp.width);
+
+                var el = document.createElement('div');
+                el.className = 'page';
+                el.style.width = baseW + 'px';
+                el.style.height = h + 'px';
+
+                var canvas = document.createElement('canvas');
+                el.appendChild(canvas);
+                content.appendChild(el);
+
+                S.pages.push({
+                  type: 'pdf',
+                  pdfPage: pg,
+                  h: h,
+                  offsetY: 0,
+                  el: el,
+                  canvas: canvas,
+                  rendered: false,
+                  rendering: false,
+                  token: 0,
+                  renderTask: null
+                });
+              });
+            });
+          })(i);
+        }
+
+        return chain.then(function () {
+          recalcOffsets();
+          finishBuild();
+        });
+      });
+    }
+
+    function recalcOffsets() {
+      var y = 0, gap = 14;
+      for (var i = 0; i < S.pages.length; i++) {
+        S.pages[i].offsetY = y;
+        S.pages[i].el.style.top = y + 'px';
+        y += S.pages[i].h + gap;
+      }
+      S.totalH = Math.max(0, y - gap);
+    }
+
+    function finishBuild() {
+      var vw = window.innerWidth;
+      S.fitZoom = (vw - 28) / S.baseW;
+      if (!isFinite(S.fitZoom) || S.fitZoom <= 0) S.fitZoom = 1;
+      S.zoom = S.fitZoom;
+      S.tx = (vw - S.baseW * S.zoom) / 2;
+      S.ty = 0;
+      clampPan();
+      requestRender();
+    }
+
+    /* ======================= 页数追踪 ======================= */
+    function updateCurrentPage() {
+      if (!S.pages.length) return;
+      var vh = window.innerHeight;
+      var midY = (vh / 2 - S.ty) / S.zoom;
+      var best = 0;
+      for (var i = 0; i < S.pages.length; i++) {
+        var p = S.pages[i];
+        if (midY >= p.offsetY && midY < p.offsetY + p.h) { best = i; break; }
+        if (midY >= p.offsetY + p.h) best = i;
+      }
+      if (best !== S.currentPage) {
+        S.currentPage = best;
+        savePageIndex();
+      }
+    }
+
+    var cpTimer = null;
+    function scheduleCurrentPageUpdate() {
+      clearTimeout(cpTimer);
+      cpTimer = setTimeout(updateCurrentPage, 220);
+    }
+
+    function goToPage(idx) {
+      if (idx < 0 || idx >= S.pages.length) return;
+      var p = S.pages[idx];
+      S.ty = -S.zoom * p.offsetY;
+      clampPan();
+      requestRender();
+      S.currentPage = idx;
+      savePageIndex();
+    }
+
+    /* ======================= 拍照页 ======================= */
+    function addImagePage(img) {
+      if (!S.baseW || S.baseW <= 0) {
+        var vw = window.innerWidth;
+        S.baseW = Math.max(400, vw - 28);
+      }
+
+      var pageH = S.baseW * (img.naturalHeight / img.naturalWidth);
+      var el = document.createElement('div');
+      el.className = 'page';
+      el.style.width = S.baseW + 'px';
+      el.style.height = pageH + 'px';
+
+      var canvas = document.createElement('canvas');
+      el.appendChild(canvas);
+      content.appendChild(el);
+
+      var first = S.pages.length === 0;
+
+      S.pages.push({
+        type: 'image',
+        image: img,
+        h: pageH,
+        offsetY: 0,
+        el: el,
+        canvas: canvas,
+        rendered: false,
+        rendering: false,
+        token: 0,
+        renderTask: null
+      });
+
+      recalcOffsets();
+
+      var vw2 = window.innerWidth;
+      S.fitZoom = (vw2 - 28) / S.baseW;
+      if (!isFinite(S.fitZoom) || S.fitZoom <= 0) S.fitZoom = 1;
+
+      if (first) {
+        S.zoom = S.fitZoom;
+        S.tx = (vw2 - S.baseW * S.zoom) / 2;
+        S.ty = 0;
+        clampPan();
+      }
+
+      emptyEl.classList.add('hidden');
+      requestRender();
+
+      var newIdx = S.pages.length - 1;
+      setTimeout(function () { goToPage(newIdx); }, 80);
+    }
+
+    /* ======================= 书写 / 擦除 ======================= */
+    var lastErasePt = null;
+    var drawPid = -1;
+    var MIN_PX_DIST2 = 2.25;
+
+    function beginStroke(x, y) {
+      var hit = screenToPage(x, y);
+      if (!hit) return false;
+      var stroke = {
+        page: hit.page,
+        color: S.penColor,
+        size: S.penSize / S.zoom,
+        type: S.penType,
+        t0: performance.now(),
+        pid: drawPid,
+        pts: [{ x: hit.x, y: hit.y }]
+      };
+      S.strokes.push(stroke);
+      activeStroke = stroke;
+      scheduleDrawInk();
+      return true;
+    }
+
+    function extendStroke(sx, sy) {
+      if (!activeStroke) return;
+      var hit = screenToPage(sx, sy);
+      if (!hit || hit.page !== activeStroke.page) return;
+
+      var pts = activeStroke.pts;
+      var last = pts[pts.length - 1];
+
+      var dx = (hit.x - last.x) * S.zoom;
+      var dy = (hit.y - last.y) * S.zoom;
+      if (dx * dx + dy * dy < MIN_PX_DIST2) return;
+
+      pts.push({ x: hit.x, y: hit.y });
+      scheduleDrawInk();
+    }
+
+    function endStroke() {
+      if (activeStroke) {
+        activeStroke = null;
+        invalidateInkCache();
+        scheduleDrawInk();
+      }
+    }
+
+    function eraseAt(sx, sy) {
+      if (lastErasePt) {
+        var ddx = sx - lastErasePt.x, ddy = sy - lastErasePt.y;
+        if (ddx * ddx + ddy * ddy < 30) return;
+      }
+      lastErasePt = { x: sx, y: sy };
+
+      var hit = screenToPage(sx, sy);
+      if (!hit) return;
+
+      var r = (S.eraserSize * 0.5) / S.zoom;
+      var r2 = r * r;
+      var out = [];
+      var changed = false;
+
+      for (var i = 0; i < S.strokes.length; i++) {
+        var st = S.strokes[i];
+        if (st.page !== hit.page) { out.push(st); continue; }
+
+        var segs = [];
+        var cur = null;
+        for (var j = 0; j < st.pts.length; j++) {
+          var pt = st.pts[j];
+          var ex = pt.x - hit.x, ey = pt.y - hit.y;
+          if (ex * ex + ey * ey <= r2) {
+            if (cur && cur.length) segs.push(cur);
+            cur = null;
+            changed = true;
+          } else {
+            if (!cur) cur = [];
+            cur.push(pt);
+          }
+        }
+        if (cur && cur.length) segs.push(cur);
+
+        for (var k = 0; k < segs.length; k++) {
+          if (segs[k].length) {
+            out.push({
+              page: st.page,
+              color: st.color,
+              size: st.size,
+              type: st.type,
+              pts: segs[k]
+            });
+          }
+        }
+      }
+
+      if (changed) {
+        S.strokes = out;
+        invalidateInkCache();
+        scheduleDrawInk();
+      }
+    }
+
+    function clearAllInk() {
+      S.strokes = [];
+      activeStroke = null;
+      invalidateInkCache();
+      drawInk();
+    }
+
+    /* ======================= 手势 ======================= */
+    var pointers = new Map();
+    var gesture = null;
+    var panVel = { x: 0, y: 0 };
+    var momentumRaf = null;
+
+    function stopMomentum() {
+      if (momentumRaf) { cancelAnimationFrame(momentumRaf); momentumRaf = null; }
+      panVel.x = panVel.y = 0;
+    }
+
+    function onDown(e) {
+      if (!S.pages.length) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+      stopMomentum();
+      e.preventDefault();
+      try { viewer.setPointerCapture(e.pointerId); } catch (err) {}
+
+      if (e.pointerType === 'pen') penIds.add(e.pointerId);
+
+      if (e.pointerType === 'touch' && palmActive()) {
+        /* 大面积触点：整只手掌 → 擦除。手写笔正在书写时，搭在屏幕上的手掌会被忽略 */
+        if (isBigTouch(e)) {
+          if (!penIds.size) addPalm(e);
+          return;
+        }
+        /* 整只手的手指陆续落下：并入已有的手掌区域 */
+        if (!penIds.size && tryJoinHand(e)) return;
+      }
+
+      pointers.set(e.pointerId, {
+        x: e.clientX, y: e.clientY,
+        t0: performance.now(), touch: e.pointerType === 'touch'
+      });
+      drawPid = e.pointerId;
+
+      if (pointers.size === 1) beginSingle(e.clientX, e.clientY);
+      else if (pointers.size === 2) beginPinch();
+      else tryHandGroup();
+    }
+
+    function beginSingle(x, y) {
+      if (S.tool === 'pen') {
+        if (beginStroke(x, y)) { gesture = { type: 'draw' }; return; }
+        gesture = { type: 'pan', lx: x, ly: y, t: performance.now() };
+        viewer.classList.add('panning');
+        return;
+      }
+      if (S.tool === 'eraser') {
+        gesture = { type: 'erase' };
+        lastErasePt = null;
+        eraseAt(x, y);
+        return;
+      }
+      gesture = { type: 'pan', lx: x, ly: y, t: performance.now() };
+      viewer.classList.add('panning');
+    }
+
+    function beginPinch() {
+      if (activeStroke) {
+        activeStroke = null;
+        invalidateInkCache();
+        scheduleDrawInk();
+      }
+      viewer.classList.remove('panning');
+      var arr = Array.from(pointers.values());
+      var a = arr[0], b = arr[1];
+      var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      var d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      gesture = {
+        type: 'pinch',
+        d0: d,
+        z0: S.zoom,
+        cx: (mx - S.tx) / S.zoom,
+        cy: (my - S.ty) / S.zoom
+      };
+    }
+
+    function updatePinch() {
+      var arr = Array.from(pointers.values());
+      if (arr.length < 2) return;
+      var a = arr[0], b = arr[1];
+      var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      var d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+
+      var z = clamp(gesture.z0 * (d / gesture.d0), 0.05, 20);
+      S.zoom = z;
+      S.tx = mx - gesture.cx * z;
+      S.ty = my - gesture.cy * z;
+
+      clampPan();
+      requestRender();
+      scheduleRerender();
+    }
+
+    function coalesced(e) {
+      var list = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
+      return (list && list.length) ? list : [e];
+    }
+
+    function onMove(e) {
+      var pl = palms.get(e.pointerId);
+      if (pl) { updatePalm(pl, e); return; }
+
+      var p = pointers.get(e.pointerId);
+      if (!p) return;
+      p.x = e.clientX;
+      p.y = e.clientY;
+
+      /* 触点刚落下、面积随后变大（手掌压实）：转为手掌擦除 */
+      if (p.touch && !penIds.size && performance.now() - p.t0 < 400 &&
+          palmActive() && isBigTouch(e)) {
+        promoteToPalm(e, p);
+        return;
+      }
+
+      if (!gesture) return;
+      if (gesture.type === 'pinch') { updatePinch(); return; }
+      if (gesture.type === 'draw') {
+        var dl = coalesced(e);
+        for (var i = 0; i < dl.length; i++) extendStroke(dl[i].clientX, dl[i].clientY);
+        return;
+      }
+      if (gesture.type === 'erase') {
+        var el = coalesced(e);
+        for (var j = 0; j < el.length; j++) eraseAt(el[j].clientX, el[j].clientY);
+        return;
+      }
+
+      if (gesture.type === 'pan') {
+        var now = performance.now();
+        var dt = Math.max(1, now - gesture.t);
+        var dx = e.clientX - gesture.lx;
+        var dy = e.clientY - gesture.ly;
+
+        panVel.x = panVel.x * 0.6 + (dx / dt) * 12 * 0.4;
+        panVel.y = panVel.y * 0.6 + (dy / dt) * 12 * 0.4;
+
+        S.tx += dx;
+        S.ty += dy;
+        gesture.lx = e.clientX;
+        gesture.ly = e.clientY;
+        gesture.t = now;
+
+        clampPan();
+        requestRender();
+      }
+    }
+
+    function onUp(e) {
+      penIds.delete(e.pointerId);
+      if (palms.has(e.pointerId)) { removePalm(e.pointerId); return; }
+      if (!pointers.has(e.pointerId)) return;
+      pointers.delete(e.pointerId);
+
+      if (pointers.size === 0) {
+        var wasPan = gesture && gesture.type === 'pan';
+        endStroke();
+        gesture = null;
+        lastErasePt = null;
+        viewer.classList.remove('panning');
+
+        if (wasPan && (Math.abs(panVel.x) > 0.6 || Math.abs(panVel.y) > 0.6)) startMomentum();
+        else { panVel.x = panVel.y = 0; }
+
+        scheduleCurrentPageUpdate();
+        scheduleRerender();
+      } else if (pointers.size === 1) {
+        var rest = Array.from(pointers.values())[0];
+        endStroke();
+        lastErasePt = null;
+        gesture = { type: 'pan', lx: rest.x, ly: rest.y, t: performance.now() };
+      }
+    }
+
+    /* 惯性滑动：按真实帧间隔衰减，60/120/144Hz 下手感一致 */
+    function startMomentum() {
+      var vx = panVel.x, vy = panVel.y;
+      var last = performance.now();
+      function step(now) {
+        var dt = Math.min(50, Math.max(1, now - last));
+        last = now;
+        var f = dt / 16.667;
+        var decay = Math.pow(0.93, f);
+        vx *= decay; vy *= decay;
+        if (Math.abs(vx) < 0.08 && Math.abs(vy) < 0.08) {
+          momentumRaf = null;
+          scheduleCurrentPageUpdate();
+          return;
+        }
+        var oldTx = S.tx, oldTy = S.ty;
+        S.tx += vx * f; S.ty += vy * f;
+        clampPan();
+        if (Math.abs(S.tx - oldTx) < 0.01) vx = 0;
+        if (Math.abs(S.ty - oldTy) < 0.01) vy = 0;
+        requestRender();
+        momentumRaf = requestAnimationFrame(step);
+      }
+      momentumRaf = requestAnimationFrame(step);
+    }
+
+    /* ============================================================
+       手掌擦除（类希沃白板）
+       · 触点宽/高超过阈值：按触点范围（椭圆）擦除
+       · 三指同时按下：按手指外接范围（圆角矩形）擦除
+       · 拖动过程中沿路径连续擦除，快速划过也不留空隙
+       ============================================================ */
+    var palms = new Map();        /* pointerId -> { kind:'blob'|'hand', x, y, w, h, el } */
+    var penIds = new Set();
+    var palmPending = [];
+    var palmRaf = null;
+    var handEl = null;
+    var handPrev = null;
+    var lastHandT = 0;
+
+    var HAND_SVG =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+      'stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/>' +
+      '<path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/>' +
+      '<path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/>' +
+      '<path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>' +
+      '</svg>';
+
+    function palmActive() {
+      return S.palmErase && S.pages.length > 0 && (S.tool === 'pen' || S.tool === 'eraser');
+    }
+
+    function isBigTouch(e) {
+      return e.pointerType === 'touch' &&
+             Math.max(e.width || 0, e.height || 0) >= S.palmThreshold;
+    }
+
+    function lerpN(a, b, t) { return a + (b - a) * t; }
+
+    function blobShape(x, y, w, h) {
+      return { t: 'e', cx: x, cy: y, rx: Math.max(w * 0.6, 34), ry: Math.max(h * 0.6, 34) };
+    }
+
+    function handRect() {
+      var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, n = 0;
+      palms.forEach(function (p) {
+        if (p.kind !== 'hand') return;
+        n++;
+        if (p.x < x0) x0 = p.x;
+        if (p.x > x1) x1 = p.x;
+        if (p.y < y0) y0 = p.y;
+        if (p.y > y1) y1 = p.y;
+      });
+      if (!n) return null;
+      var m = 40;
+      x0 -= m; y0 -= m; x1 += m; y1 += m;
+      return { t: 'r', x0: x0, y0: y0, x1: x1, y1: y1,
+               rad: Math.min(36, (x1 - x0) / 2, (y1 - y0) / 2) };
+    }
+
+    /* 在相邻两帧的形状之间插值，保证快速拖动时不漏擦 */
+    function sweepShapes(a, b, out) {
+      if (!b) return;
+      if (!a || a.t !== b.t) { out.push(b); return; }
+      var d, minDim;
+      if (b.t === 'e') {
+        d = Math.hypot(b.cx - a.cx, b.cy - a.cy) + Math.abs(b.rx - a.rx) + Math.abs(b.ry - a.ry);
+        minDim = Math.min(b.rx, b.ry);
+      } else {
+        d = Math.max(Math.abs(b.x0 - a.x0), Math.abs(b.y0 - a.y0),
+                     Math.abs(b.x1 - a.x1), Math.abs(b.y1 - a.y1));
+        minDim = Math.min(b.x1 - b.x0, b.y1 - b.y0) / 2;
+      }
+      var n = Math.max(1, Math.min(18, Math.ceil(d / Math.max(8, minDim * 0.5))));
+      for (var i = 1; i <= n; i++) {
+        var t = i / n;
+        if (b.t === 'e') {
+          out.push({ t: 'e', cx: lerpN(a.cx, b.cx, t), cy: lerpN(a.cy, b.cy, t),
+                     rx: lerpN(a.rx, b.rx, t), ry: lerpN(a.ry, b.ry, t) });
+        } else {
+          out.push({ t: 'r', x0: lerpN(a.x0, b.x0, t), y0: lerpN(a.y0, b.y0, t),
+                     x1: lerpN(a.x1, b.x1, t), y1: lerpN(a.y1, b.y1, t),
+                     rad: lerpN(a.rad, b.rad, t) });
+        }
+      }
+    }
+
+    function addPalm(e) {
+      var pl = { kind: 'blob', x: e.clientX, y: e.clientY, w: e.width || 0, h: e.height || 0, el: null };
+      palms.set(e.pointerId, pl);
+      palmPending.push(blobShape(pl.x, pl.y, pl.w, pl.h));
+      schedulePalmFlush();
+    }
+
+    function promoteToPalm(e, p) {
+      pointers.delete(e.pointerId);
+      dropMarksFor([e.pointerId]);
+      var pl = { kind: 'blob', x: e.clientX, y: e.clientY, w: e.width || 0, h: e.height || 0, el: null };
+      palms.set(e.pointerId, pl);
+      palmPending.push(blobShape(pl.x, pl.y, pl.w, pl.h));
+      resetGestureAfterRemoval();
+      schedulePalmFlush();
+    }
+
+    function nearRect(x, y, r, margin) {
+      return x >= r.x0 - margin && x <= r.x1 + margin && y >= r.y0 - margin && y <= r.y1 + margin;
+    }
+
+    /* 手掌区域刚形成后落下的手指（第 4、5 指、掌根）并入同一只手 */
+    function tryJoinHand(e) {
+      if (!handPrev || e.pointerType !== 'touch') return false;
+      var now = performance.now();
+      if (now - lastHandT > 500) return false;
+      var r = handRect();
+      if (!r || !nearRect(e.clientX, e.clientY, r, 150)) return false;
+      palms.set(e.pointerId, { kind: 'hand', x: e.clientX, y: e.clientY, w: 0, h: 0, el: null });
+      lastHandT = now;
+      var cur = handRect();
+      sweepShapes(handPrev, cur, palmPending);
+      handPrev = cur;
+      schedulePalmFlush();
+      return true;
+    }
+
+    /* 三指在极短时间内、近距离同时按下：整只手 */
+    function tryHandGroup() {
+      if (!palmActive()) return;
+      var now = performance.now();
+      var ids = [];
+      pointers.forEach(function (p, id) {
+        if (p.touch && now - p.t0 < 350) ids.push(id);
+      });
+      if (ids.length < 3) return;
+
+      var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+      ids.forEach(function (id) {
+        var p = pointers.get(id);
+        if (p.x < x0) x0 = p.x;
+        if (p.x > x1) x1 = p.x;
+        if (p.y < y0) y0 = p.y;
+        if (p.y > y1) y1 = p.y;
+      });
+      if (x1 - x0 > 360 || y1 - y0 > 360) return;
+
+      dropMarksFor(ids);
+      ids.forEach(function (id) {
+        var p = pointers.get(id);
+        pointers.delete(id);
+        palms.set(id, { kind: 'hand', x: p.x, y: p.y, w: 0, h: 0, el: null });
+      });
+      lastHandT = now;
+      handPrev = handRect();
+      palmPending.push(handPrev);
+      resetGestureAfterRemoval();
+      schedulePalmFlush();
+    }
+
+    /* 删除手掌落下瞬间误写出的小笔画 */
+    function dropMarksFor(ids) {
+      var now = performance.now(), keep = [], dropped = false;
+      for (var i = 0; i < S.strokes.length; i++) {
+        var st = S.strokes[i];
+        if (st.t0 && now - st.t0 < 800 && ids.indexOf(st.pid) !== -1) {
+          dropped = true;
+          if (st === activeStroke) activeStroke = null;
+        } else {
+          keep.push(st);
+        }
+      }
+      if (dropped) {
+        S.strokes = keep;
+        invalidateInkCache();
+        scheduleDrawInk();
+      }
+    }
+
+    function resetGestureAfterRemoval() {
+      if (pointers.size >= 2) { beginPinch(); return; }
+      endStroke();
+      gesture = null;
+      lastErasePt = null;
+      viewer.classList.remove('panning');
+    }
+
+    function updatePalm(pl, e) {
+      if (pl.kind === 'blob') {
+        var prev = blobShape(pl.x, pl.y, pl.w, pl.h);
+        pl.x = e.clientX; pl.y = e.clientY;
+        if (e.width) pl.w = e.width;
+        if (e.height) pl.h = e.height;
+        sweepShapes(prev, blobShape(pl.x, pl.y, pl.w, pl.h), palmPending);
+      } else {
+        pl.x = e.clientX; pl.y = e.clientY;
+        var cur = handRect();
+        sweepShapes(handPrev, cur, palmPending);
+        handPrev = cur;
+        lastHandT = performance.now();
+      }
+      schedulePalmFlush();
+    }
+
+    function removePalm(id) {
+      var pl = palms.get(id);
+      if (!pl) return;
+      palms.delete(id);
+      if (pl.el) { fadeRing(pl.el); pl.el = null; }
+      if (pl.kind === 'hand') {
+        var any = false;
+        palms.forEach(function (p) { if (p.kind === 'hand') any = true; });
+        if (!any) {
+          if (handEl) { fadeRing(handEl); handEl = null; }
+          handPrev = null;
+        } else {
+          handPrev = handRect();
+        }
+        lastHandT = performance.now();
+      }
+      schedulePalmFlush();
+    }
+
+    function clearAllPalms() {
+      palms.forEach(function (p) { if (p.el) fadeRing(p.el); });
+      palms.clear();
+      if (handEl) { fadeRing(handEl); handEl = null; }
+      handPrev = null;
+      palmPending = [];
+    }
+
+    function schedulePalmFlush() {
+      if (palmRaf) return;
+      palmRaf = requestAnimationFrame(function () {
+        palmRaf = null;
+        flushPalm();
+      });
+    }
+
+    function flushPalm() {
+      var list = palmPending;
+      palmPending = [];
+      if (list.length > 60) {
+        var k = Math.ceil(list.length / 60), thin = [];
+        for (var i = 0; i < list.length; i += k) thin.push(list[i]);
+        if (thin[thin.length - 1] !== list[list.length - 1]) thin.push(list[list.length - 1]);
+        list = thin;
+      }
+      if (list.length) erasePalmShapes(list);
+      updatePalmRings();
+    }
+
+    function erasePalmShapes(shapes) {
+      if (!shapes.length || !S.strokes.length) return;
+
+      var bx0 = 1e9, by0 = 1e9, bx1 = -1e9, by1 = -1e9, i;
+      for (i = 0; i < shapes.length; i++) {
+        var sh = shapes[i];
+        if (sh.t === 'e') {
+          bx0 = Math.min(bx0, sh.cx - sh.rx); bx1 = Math.max(bx1, sh.cx + sh.rx);
+          by0 = Math.min(by0, sh.cy - sh.ry); by1 = Math.max(by1, sh.cy + sh.ry);
+        } else {
+          bx0 = Math.min(bx0, sh.x0); bx1 = Math.max(bx1, sh.x1);
+          by0 = Math.min(by0, sh.y0); by1 = Math.max(by1, sh.y1);
+        }
+      }
+
+      function inShapes(x, y, pad) {
+        for (var q = 0; q < shapes.length; q++) {
+          var s2 = shapes[q];
+          if (s2.t === 'e') {
+            var ex = (x - s2.cx) / (s2.rx + pad), ey = (y - s2.cy) / (s2.ry + pad);
+            if (ex * ex + ey * ey <= 1) return true;
+          } else {
+            var a0 = s2.x0 - pad, b0 = s2.y0 - pad, a1 = s2.x1 + pad, b1 = s2.y1 + pad;
+            if (x < a0 || x > a1 || y < b0 || y > b1) continue;
+            var rad = s2.rad + pad;
+            var cx = x < a0 + rad ? a0 + rad : (x > a1 - rad ? a1 - rad : x);
+            var cy = y < b0 + rad ? b0 + rad : (y > b1 - rad ? b1 - rad : y);
+            var ddx = x - cx, ddy = y - cy;
+            if (ddx * ddx + ddy * ddy <= rad * rad) return true;
+          }
+        }
+        return false;
+      }
+
+      /* 相邻两点之间的线段穿过擦除区域时，也要断开 */
+      function segHits(x0, y0, x1, y1, pad) {
+        if ((x0 < bx0 - pad && x1 < bx0 - pad) || (x0 > bx1 + pad && x1 > bx1 + pad) ||
+            (y0 < by0 - pad && y1 < by0 - pad) || (y0 > by1 + pad && y1 > by1 + pad)) return false;
+        var dx = x1 - x0, dy = y1 - y0, len = Math.sqrt(dx * dx + dy * dy);
+        if (len < 6) return false;
+        var n = Math.min(48, Math.ceil(len / 6));
+        for (var q = 1; q < n; q++) {
+          var t = q / n;
+          if (inShapes(x0 + dx * t, y0 + dy * t, pad)) return true;
+        }
+        return false;
+      }
+
+      var z = S.zoom, tx = S.tx, ty = S.ty;
+      var out = [], changed = false;
+
+      for (var si = 0; si < S.strokes.length; si++) {
+        var st = S.strokes[si];
+        var pg = S.pages[st.page];
+        if (!pg || st === activeStroke) { out.push(st); continue; }
+
+        var oy = ty + z * pg.offsetY;
+        var bb = strokeBBox(st);
+        var mg = st.size * z * 1.1 + 2;
+        if (tx + z * bb.x1 + mg < bx0 || tx + z * bb.x0 - mg > bx1 ||
+            oy + z * bb.y1 + mg < by0 || oy + z * bb.y0 - mg > by1) { out.push(st); continue; }
+
+        var pad = st.size * z * 0.5;
+        var pts = st.pts, segs = [], cur = null, hit = false, lx = 0, ly = 0;
+
+        for (var j = 0; j < pts.length; j++) {
+          var sx = tx + z * pts[j].x, sy = oy + z * pts[j].y;
+          var inside = sx >= bx0 - pad && sx <= bx1 + pad && sy >= by0 - pad && sy <= by1 + pad &&
+                       inShapes(sx, sy, pad);
+          if (inside) {
+            if (cur && cur.length) segs.push(cur);
+            cur = null;
+            hit = true;
+          } else {
+            if (!cur) cur = [];
+            else if (segHits(lx, ly, sx, sy, pad)) {
+              if (cur.length) segs.push(cur);
+              cur = [];
+              hit = true;
+            }
+            cur.push(pts[j]);
+          }
+          lx = sx; ly = sy;
+        }
+        if (cur && cur.length) segs.push(cur);
+
+        if (!hit) { out.push(st); continue; }
+        changed = true;
+        for (var m2 = 0; m2 < segs.length; m2++) {
+          if (segs[m2].length > 1) {
+            out.push({ page: st.page, color: st.color, size: st.size, type: st.type, pts: segs[m2] });
+          }
+        }
+      }
+
+      if (changed) {
+        S.strokes = out;
+        invalidateInkCache();
+        drawInk();
+      }
+    }
+
+    /* ---- 手掌提示圈 ---- */
+    function makeRing() {
+      var el = document.createElement('div');
+      el.className = 'palm-ring';
+      el.innerHTML = HAND_SVG;
+      document.body.appendChild(el);
+      return el;
+    }
+
+    function fadeRing(el) {
+      el.classList.add('out');
+      setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 260);
+    }
+
+    function placeRing(el, x, y, w, h, radius) {
+      el.style.width = w.toFixed(1) + 'px';
+      el.style.height = h.toFixed(1) + 'px';
+      el.style.borderRadius = radius;
+      el.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0)';
+      el.style.setProperty('--ic', clamp(Math.min(w, h) * 0.42, 24, 72).toFixed(0) + 'px');
+    }
+
+    function updatePalmRings() {
+      palms.forEach(function (pl) {
+        if (pl.kind !== 'blob') return;
+        if (!pl.el) pl.el = makeRing();
+        var sh = blobShape(pl.x, pl.y, pl.w, pl.h);
+        placeRing(pl.el, sh.cx - sh.rx, sh.cy - sh.ry, sh.rx * 2, sh.ry * 2, '50%');
+      });
+      var r = handRect();
+      if (r) {
+        if (!handEl) handEl = makeRing();
+        placeRing(handEl, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0, r.rad.toFixed(1) + 'px');
+      }
+    }
+
+    viewer.addEventListener('pointerdown', onDown, { passive: false });
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+
+    viewer.addEventListener('touchstart', function (e) {
+      if (e.touches.length > 1) e.preventDefault();
+    }, { passive: false });
+    viewer.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+    /* ======================= 橡皮半径指示 ======================= */
+    function updateRing(x, y, show) {
+      if (!show || S.tool !== 'eraser') { ring.style.display = 'none'; return; }
+      var d = S.eraserSize;
+      ring.style.width = d + 'px';
+      ring.style.height = d + 'px';
+      ring.style.left = x + 'px';
+      ring.style.top = y + 'px';
+      ring.style.display = 'block';
+    }
+
+    viewer.addEventListener('pointermove', function (e) {
+      if (S.tool === 'eraser' && !(palmActive() && isBigTouch(e))) updateRing(e.clientX, e.clientY, true);
+    }, { passive: true });
+
+    viewer.addEventListener('pointerdown', function (e) {
+      if (S.tool === 'eraser' && !(palmActive() && isBigTouch(e))) updateRing(e.clientX, e.clientY, true);
+    }, { passive: true });
+
+    viewer.addEventListener('pointerleave', function () {
+      ring.style.display = 'none';
+    });
+
+    window.addEventListener('pointerup', function (e) {
+      if (e.pointerType === 'touch') ring.style.display = 'none';
+    });
+
+    /* ======================= 调色板 ======================= */
+    function renderPalette() {
+      swatchRow.innerHTML = '';
+      palette.forEach(function (c) {
+        var b = document.createElement('button');
+        b.className = 'sw' + (c === S.penColor ? ' active' : '');
+        b.style.setProperty('--c', c);
+        b.title = c;
+        b.addEventListener('click', function () { selectColor(c); });
+        swatchRow.appendChild(b);
+      });
+
+      var more = document.createElement('button');
+      more.className = 'sw more';
+      more.textContent = '…';
+      more.title = '自定义颜色';
+      more.addEventListener('click', function () {
+        try { colorPicker.click(); } catch (e) {}
+      });
+      swatchRow.appendChild(more);
+
+      updatePenPreview();
+    }
+
+    function selectColor(c) {
+      S.penColor = c;
+      if (S.tool !== 'pen') { S.tool = 'pen'; updateToolUI(); }
+      renderPalette();
+      scheduleSave();
+    }
+
+    colorPicker.addEventListener('change', function () {
+      var c = colorPicker.value;
+      if (!c) return;
+      if (palette.indexOf(c) === -1) {
+        palette.push(c);
+        if (palette.length > 13) palette.splice(1, 1);
+      }
+      selectColor(c);
+    });
+
+    function updatePenPreview() {
+      var d = Math.max(3, Math.min(26, S.penSize * 1.9));
+      penPrev.style.width = d + 'px';
+      penPrev.style.height = d + 'px';
+      penPrev.style.setProperty('--c', S.penColor);
+      penPrev.style.background = S.penColor;
+    }
+
+    /* ======================= 笔类型 ======================= */
+    function updatePenTypeUI() {
+      var btns = penTypes.querySelectorAll('.pt-btn');
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle('active', btns[i].getAttribute('data-type') === S.penType);
+      }
+    }
+
+    penTypes.addEventListener('click', function (e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      var b = t.closest('.pt-btn');
+      if (!b) return;
+      var type = b.getAttribute('data-type');
+      if (type === 'pen' || type === 'soft' || type === 'chalk') {
+        S.penType = type;
+        updatePenTypeUI();
+        movePenBar(false);
+        scheduleSave();
+        if (S.tool !== 'pen') { S.tool = 'pen'; updateToolUI(); }
+      }
+    });
+
+    /* ======================= 笔/橡皮切换滑块 ======================= */
+    /* 指示条（工具坞 / 笔类型共用）：位移 + 轻微挤压回弹 */
+    function slideBar(bar, sx, sy, instant, intro) {
+      if (bar._anim) { try { bar._anim.cancel(); } catch (e) {} bar._anim = null; }
+
+      var prevX = parseFloat(bar.dataset.x);
+      var prevY = parseFloat(bar.dataset.y);
+      var hasPrev = !isNaN(prevX) && !isNaN(prevY);
+
+      bar.dataset.x = sx;
+      bar.dataset.y = sy;
+
+      var endT = 'translate3d(' + sx + 'px,' + sy + 'px,0)';
+      bar.style.transform = endT;
+      bar.style.opacity = '1';
+
+      if (!hasPrev) {
+        if (!intro) return;
+        try {
+          bar._anim = bar.animate([
+            { transform: endT + ' scale(0.55)', opacity: 0, easing: 'cubic-bezier(.3,.9,.4,1)' },
+            { transform: endT + ' scale(1.06)', opacity: 1, offset: 0.7, easing: 'cubic-bezier(.4,0,.4,1)' },
+            { transform: endT + ' scale(1)',    opacity: 1 }
+          ], { duration: 340, easing: 'linear' });
+        } catch (e) {}
+        return;
+      }
+
+      if (instant || (prevX === sx && prevY === sy)) return;
+
+      var axisX = Math.abs(sx - prevX) >= Math.abs(sy - prevY);
+      var squash  = axisX ? '0.9,1'  : '1,0.9';
+      var stretch = axisX ? '1.04,1' : '1,1.04';
+      var startT = 'translate3d(' + prevX + 'px,' + prevY + 'px,0)';
+      var soft = 'cubic-bezier(.4,0,.4,1)';
+
+      try {
+        bar._anim = bar.animate([
+          { transform: startT + ' scale(1,1)', easing: 'cubic-bezier(.22,.9,.3,1)' },
+          { transform: endT + ' scale(1,1)', offset: 0.62, easing: soft },
+          { transform: endT + ' scale(' + squash + ')', offset: 0.8, easing: soft },
+          { transform: endT + ' scale(' + stretch + ')', offset: 0.92, easing: soft },
+          { transform: endT + ' scale(1,1)' }
+        ], { duration: 440, easing: 'linear' });
+      } catch (e) {}
+    }
+
+    function moveToolSlider(tool, instant) {
+      if (!tool) {
+        if (toolSlider._anim) { try { toolSlider._anim.cancel(); } catch (e) {} toolSlider._anim = null; }
+        toolSlider.style.opacity = '0';
+        return;
+      }
+
+      var btn = (tool === 'pen') ? btnPen : (tool === 'eraser' ? btnEraser : null);
+      if (!btn) return;
+
+      var isV = toolbar.classList.contains('vertical');
+      var bw = btn.offsetWidth, bh = btn.offsetHeight;
+      var bx = btn.offsetLeft, by = btn.offsetTop;
+
+      var sw, sh, sx, sy;
+      if (isV) {
+        sw = 3; sh = 22;
+        sx = bx + bw + 4;
+        sy = by + (bh - sh) / 2;
+      } else {
+        sw = 22; sh = 3;
+        sx = bx + (bw - sw) / 2;
+        sy = by + bh + 4;
+      }
+
+      toolSlider.style.width = sw + 'px';
+      toolSlider.style.height = sh + 'px';
+
+      slideBar(toolSlider, sx, sy, instant, true);
+    }
+
+    function movePenBar(instant) {
+      var btn = penTypes.querySelector('.pt-btn.active');
+      if (!btn || !btn.offsetWidth) return;
+      var sx = btn.offsetLeft + (btn.offsetWidth - 22) / 2;
+      var sy = btn.offsetTop + btn.offsetHeight + 3;
+      slideBar(penBar, sx, sy, instant, false);
+    }
+
+    /* ======================= 工具状态 ======================= */
+    function updateToolUI() {
+      btnPen.classList.toggle('active', S.tool === 'pen');
+      btnEraser.classList.toggle('active', S.tool === 'eraser');
+      viewer.classList.toggle('pen', S.tool === 'pen');
+      viewer.classList.toggle('eraser', S.tool === 'eraser');
+      if (S.tool !== 'eraser') ring.style.display = 'none';
+      moveToolSlider(S.tool, false);
+      hideHint();
+    }
+
+    function applyPenSlider() {
+      S.penSize = 1.5 + (S.penSliderVal / 100) * 12;
+      updatePenPreview();
+    }
+
+    /* ======================= 圆角 / 玻璃 ======================= */
+    function applyRadius() {
+      var base = 16 * S.radiusScale;
+      document.documentElement.style.setProperty('--radius-base', base.toFixed(2) + 'px');
+      if (!collapsed) {
+        dockEl.style.borderRadius = (base * S.dockScale).toFixed(2) + 'px';
+      }
+    }
+
+    function applyGlass() {
+      document.documentElement.style.setProperty(
+        '--glass-alpha', clamp(S.glassAlpha, 0.3, 1).toFixed(3)
+      );
+      document.documentElement.style.setProperty(
+        '--glass-blur', clamp(S.glassBlur, 0, 20).toFixed(1) + 'px'
+      );
+      updateDockRefraction();
+      updatePopoverRefraction();
+    }
+
+    /* ======================= 二级面板 ======================= */
+    function isPopoverOpen() { return popover.classList.contains('show'); }
+
+    function positionPopover() {
+      popover.classList.add('show');
+      popover.style.visibility = 'hidden';
+
+      var pr = popover.offsetWidth;
+      var ph = popover.offsetHeight;
+      var r = dockEl.getBoundingClientRect();
+      var vw = window.innerWidth, vh = window.innerHeight;
+
+      var x, y, px = 0, py = 0, ox = '50%', oy = '50%';
+
+      if (currentSide === 'left') {
+        x = r.right + 12;
+        y = r.top + r.height / 2 - ph / 2;
+        px = -18; py = 0; ox = '0%'; oy = '50%';
+      } else if (currentSide === 'right') {
+        x = r.left - pr - 12;
+        y = r.top + r.height / 2 - ph / 2;
+        px = 18; py = 0; ox = '100%'; oy = '50%';
+      } else {
+        x = r.left + r.width / 2 - pr / 2;
+        y = r.top - ph - 12;
+        px = 0; py = 18; ox = '50%'; oy = '100%';
+        if (y < 10) {
+          y = r.bottom + 12;
+          py = -18; oy = '0%';
+        }
+      }
+
+      x = clamp(x, 10, Math.max(10, vw - pr - 10));
+      y = clamp(y, 10, Math.max(10, vh - ph - 10));
+
+      popover.style.left = x + 'px';
+      popover.style.top = y + 'px';
+      popover.style.transformOrigin = ox + ' ' + oy;
+      popover.style.setProperty('--pop-x', px + 'px');
+      popover.style.setProperty('--pop-y', py + 'px');
+      popover.style.visibility = '';
+
+      if (panePen.classList.contains('show')) movePenBar(true);
+      updatePopoverRefraction();
+    }
+
+    function hidePopover() {
+      popover.classList.remove('show');
+    }
+
+    function showPane(name) {
+      panePen.classList.toggle('show', name === 'pen');
+      paneEraser.classList.toggle('show', name === 'eraser');
+      paneSet.classList.toggle('show', name === 'set');
+      if (name === 'set') updateFsBtnUI();
+      positionPopover();
+    }
+
+    btnPen.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (S.tool === 'pen') {
+        S.tool = null;
+        updateToolUI();
+        hidePopover();
+        scheduleSave();
+      } else {
+        S.tool = 'pen';
+        updateToolUI();
+        renderPalette();
+        updatePenTypeUI();
+        showPane('pen');
+        scheduleSave();
+      }
+    });
+
+    btnEraser.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (S.tool === 'eraser') {
+        S.tool = null;
+        updateToolUI();
+        hidePopover();
+        scheduleSave();
+      } else {
+        S.tool = 'eraser';
+        updateToolUI();
+        showPane('eraser');
+        scheduleSave();
+      }
+    });
+
+    btnSet.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (isPopoverOpen() && paneSet.classList.contains('show')) {
+        hidePopover();
+        return;
+      }
+      showPane('set');
+    });
+
+    document.addEventListener('pointerdown', function (e) {
+      if (!isPopoverOpen()) return;
+      if (popover.contains(e.target)) return;
+      if (dockEl.contains(e.target)) return;
+      hidePopover();
+    }, true);
+
+    penSlider.addEventListener('input', function () {
+      S.penSliderVal = parseInt(penSlider.value, 10) || 1;
+      applyPenSlider();
+      if (S.tool !== 'pen') { S.tool = 'pen'; updateToolUI(); }
+      scheduleSave();
+    });
+
+    /* 滑块填充：把当前进度写入 --pr，供轨道渐变和滑钮定位使用 */
+    function syncRange(el) {
+      var min = parseFloat(el.min); if (isNaN(min)) min = 0;
+      var max = parseFloat(el.max); if (isNaN(max)) max = 100;
+      var v = parseFloat(el.value); if (isNaN(v)) v = min;
+      var pr = max > min ? (v - min) / (max - min) : 0;
+      el.style.setProperty('--pr', clamp(pr, 0, 1).toFixed(4));
+    }
+
+    function syncAllRanges() {
+      var list = document.querySelectorAll('input.sl');
+      for (var i = 0; i < list.length; i++) syncRange(list[i]);
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('input.sl'), function (el) {
+      el.addEventListener('input', function () { syncRange(el); });
+    });
+
+    var rangeTween = null;
+    function tweenRange(el, to, ms, onFrame, onDone) {
+      if (rangeTween) cancelAnimationFrame(rangeTween);
+      var from = parseFloat(el.value) || 0;
+      var t0 = performance.now();
+      function step(now) {
+        var k = clamp((now - t0) / ms, 0, 1);
+        var e = 1 - Math.pow(1 - k, 3);
+        el.value = (from + (to - from) * e).toFixed(2);
+        syncRange(el);
+        if (onFrame) onFrame(parseFloat(el.value));
+        if (k < 1) rangeTween = requestAnimationFrame(step);
+        else { rangeTween = null; if (onDone) onDone(); }
+      }
+      rangeTween = requestAnimationFrame(step);
+    }
+
+    clearSlider.addEventListener('pointerdown', function () {
+      if (rangeTween) { cancelAnimationFrame(rangeTween); rangeTween = null; }
+    });
+
+    clearSlider.addEventListener('input', function () {
+      var v = parseFloat(clearSlider.value) || 0;
+      clearSlider.classList.toggle('danger', v >= 96);
+    });
+
+    clearSlider.addEventListener('change', function () {
+      var v = parseFloat(clearSlider.value) || 0;
+      if (v >= 96) {
+        clearAllInk();
+        showHint('已清屏', 900);
+      }
+      tweenRange(clearSlider, 0, v >= 96 ? 240 : 300, function (cv) {
+        clearSlider.classList.toggle('danger', cv >= 96);
+      });
+    });
+
+    /* 手掌擦除设置 */
+    function updatePalmUI() {
+      palmBtn.textContent = S.palmErase ? '手掌擦除：开启' : '手掌擦除：关闭';
+      palmBtn.classList.toggle('off', !S.palmErase);
+      palmSizeSlider.disabled = !S.palmErase;
+    }
+
+    palmBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      S.palmErase = !S.palmErase;
+      if (!S.palmErase) clearAllPalms();
+      updatePalmUI();
+      scheduleSave();
+    });
+
+    palmSizeSlider.addEventListener('input', function () {
+      var v = parseInt(palmSizeSlider.value, 10);
+      if (isNaN(v)) v = 56;
+      S.palmThreshold = v;
+      palmSizeVal.textContent = v + 'px';
+      scheduleSave();
+    });
+
+    dockScaleSlider.addEventListener('pointerdown', function () {
+      dockEl.classList.add('no-trans');
+    });
+    window.addEventListener('pointerup', function () {
+      dockEl.classList.remove('no-trans');
+    });
+
+    dockScaleSlider.addEventListener('input', function () {
+      var v = parseInt(dockScaleSlider.value, 10) || 100;
+      dockScaleVal.textContent = v + '%';
+
+      var oldW = curW(), oldH = curH();
+      var cx = dockX + oldW / 2, cy = dockY + oldH / 2;
+
+      S.dockScale = v / 100;
+      measureDock();
+
+      dockX = cx - curW() / 2;
+      dockY = cy - curH() / 2;
+      clampDockPos();
+      applyDockPos();
+      applyRadius();
+      applyGlass();
+
+      if (isPopoverOpen()) positionPopover();
+      scheduleSave();
+    });
+
+    radiusSlider.addEventListener('input', function () {
+      var v = parseInt(radiusSlider.value, 10);
+      if (isNaN(v)) v = 100;
+      radiusVal.textContent = v + '%';
+      S.radiusScale = v / 100;
+      applyRadius();
+      applyGlass();
+      if (isPopoverOpen()) positionPopover();
+      scheduleSave();
+    });
+
+    glassAlphaSlider.addEventListener('input', function () {
+      var v = parseInt(glassAlphaSlider.value, 10);
+      if (isNaN(v)) v = 86;
+      glassAlphaVal.textContent = v + '%';
+      S.glassAlpha = v / 100;
+      applyGlass();
+      if (isPopoverOpen()) positionPopover();
+      scheduleSave();
+    });
+
+    glassBlurSlider.addEventListener('input', function () {
+      var v = parseInt(glassBlurSlider.value, 10);
+      if (isNaN(v)) v = 2;
+      glassBlurVal.textContent = v + 'px';
+      S.glassBlur = v;
+      applyGlass();
+      if (isPopoverOpen()) positionPopover();
+      scheduleSave();
+    });
+
+    refractHeightSlider.addEventListener('input', function () {
+      var v = parseInt(refractHeightSlider.value, 10);
+      if (isNaN(v)) v = 12;
+      refractHeightVal.textContent = v + '';
+      S.refractHeight = v;
+      applyGlass();
+      if (isPopoverOpen()) positionPopover();
+      scheduleSave();
+    });
+
+    refractAmountSlider.addEventListener('input', function () {
+      var v = parseInt(refractAmountSlider.value, 10);
+      if (isNaN(v)) v = 24;
+      refractAmountVal.textContent = v + '';
+      S.refractAmount = v;
+      applyGlass();
+      if (isPopoverOpen()) positionPopover();
+      scheduleSave();
+    });
+
+    /* ======================= 拍照 ======================= */
+    cameraBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      cameraInput.click();
+    });
+
+    cameraInput.addEventListener('change', function () {
+      var f = cameraInput.files && cameraInput.files[0];
+      if (!f) return;
+      var img = new Image();
+      var url = URL.createObjectURL(f);
+      img.onload = function () {
+        URL.revokeObjectURL(url);
+        addImagePage(img);
+        hidePopover();
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        showHint('图片加载失败', 1800);
+      };
+      img.src = url;
+      cameraInput.value = '';
+    });
+
+    /* ======================= 工具坞：尺寸 ======================= */
+    function curW() { return collapsed ? 54 * S.dockScale : dockW; }
+    function curH() { return collapsed ? 54 * S.dockScale : dockH; }
+
+    function measureDock() {
+      var iw = dockInner.offsetWidth;
+      var ih = dockInner.offsetHeight;
+      dockW = iw * S.dockScale;
+      dockH = ih * S.dockScale;
+      dockInner.style.transform = 'translate(-50%,-50%) scale(' + S.dockScale + ')';
+      fab.style.transform = 'translate(-50%,-50%) scale(' + S.dockScale + ')';
+      applyDockSize();
+      moveToolSlider(S.tool, true);
+    }
+
+    function applyDockSize() {
+      var w = curW(), h = curH();
+      dockEl.style.width = w + 'px';
+      dockEl.style.height = h + 'px';
+      if (collapsed) {
+        dockEl.style.borderRadius = (w / 2) + 'px';
+      } else {
+        dockEl.style.borderRadius = (16 * S.radiusScale * S.dockScale).toFixed(2) + 'px';
+      }
+      scheduleDockRefraction();
+    }
+
+    function applyDockPos() {
+      dockWrap.style.transform = 'translate3d(' + dockX + 'px,' + dockY + 'px,0)';
+    }
+
+    var dockPosRaf = null;
+    function scheduleDockPos() {
+      if (dockPosRaf) return;
+      dockPosRaf = requestAnimationFrame(function () {
+        dockPosRaf = null;
+        applyDockPos();
+      });
+    }
+
+    function clampDockPos() {
+      var w = curW(), h = curH();
+      var vw = window.innerWidth, vh = window.innerHeight;
+      dockX = clamp(dockX, 8, Math.max(8, vw - w - 8));
+      dockY = clamp(dockY, 8, Math.max(8, vh - h - 8));
+    }
+
+    /* ============================================================
+       流体玻璃撞壁
+       ============================================================ */
+    var fluidAnim = null;
+    var sheenAnim = null;
+    var popAnim = null;
+
+    function baseRadius() {
+      return collapsed ? (curW() / 2) : (16 * S.radiusScale * S.dockScale);
+    }
+
+    function cancelFluid() {
+      if (fluidAnim) { try { fluidAnim.cancel(); } catch (e) {} fluidAnim = null; }
+      if (sheenAnim) { try { sheenAnim.cancel(); } catch (e) {} sheenAnim = null; }
+      if (popAnim)   { try { popAnim.cancel(); }   catch (e) {} popAnim = null; }
+    }
+
+    function playFluidCollide(side, strength, delay) {
+      strength = (strength == null) ? 1 : strength;
+      delay = delay || 0;
+      cancelFluid();
+
+      /* 圆角基准不能超过半边长，否则浏览器会整体缩放圆角、产生跳变 */
+      var baseR = Math.min(baseRadius(), curW() / 2, curH() / 2);
+      var horizontal = (side === 'left' || side === 'right');
+      var originX = '50%', originY = '50%';
+      if (horizontal) originX = (side === 'left') ? '0%' : '100%';
+      else originY = '100%';
+
+      /* 阻尼振荡：幅度约为原来的一半 */
+      var AX = 0.028 * strength;   /* 垂直于墙面方向的压缩 */
+      var AY = 0.018 * strength;   /* 沿墙面方向的外鼓 */
+      var NEAR = -0.12, FAR = 0.07;
+      var OFF = [0, 0.18, 0.40, 0.60, 0.80, 1];
+      var AMP = [0, 1, -0.34, 0.15, -0.06, 0];
+      var ease = 'cubic-bezier(.35,0,.3,1)';
+
+      var kf = OFF.map(function (o, i) {
+        var a = AMP[i], sx, sy, rr;
+        var near = 1 + NEAR * a, far = 1 + FAR * a;
+        if (horizontal) {
+          sx = 1 - AX * a; sy = 1 + AY * a;
+          rr = (side === 'left') ? [near, far, far, near] : [far, near, near, far];
+        } else {
+          sx = 1 + AY * a; sy = 1 - AX * a;
+          rr = [1, 1, near, near];
+        }
+        return {
+          offset: o,
+          transform: 'scale(' + sx.toFixed(4) + ',' + sy.toFixed(4) + ')',
+          borderRadius: rr.map(function (v) { return (baseR * v).toFixed(2) + 'px'; }).join(' '),
+          easing: ease
+        };
+      });
+
+      dockEl.style.transformOrigin = originX + ' ' + originY;
+
+      try {
+        fluidAnim = dockEl.animate(kf, { duration: 620, delay: delay, easing: 'linear' });
+        fluidAnim.onfinish = function () {
+          dockEl.style.transformOrigin = '';
+          fluidAnim = null;
+        };
+        fluidAnim.oncancel = function () {
+          dockEl.style.transformOrigin = '';
+        };
+      } catch (e) {
+        dockEl.style.transformOrigin = '';
+      }
+
+      playSheen(side, delay);
+    }
+
+    function playSheen(side, delay) {
+      delay = delay || 0;
+      var A, B;
+      if (side === 'right') {
+        A = 'translateX(-150%) skewX(-16deg)';
+        B = 'translateX(270%) skewX(-16deg)';
+      } else {
+        A = 'translateX(270%) skewX(-16deg)';
+        B = 'translateX(-150%) skewX(-16deg)';
+      }
+
+      try {
+        sheenAnim = sheenBar.animate([
+          { transform: A, opacity: 0 },
+          { transform: A, opacity: 0.4, offset: 0.10 },
+          { transform: B, opacity: 0.2, offset: 0.58 },
+          { transform: B, opacity: 0,   offset: 1 }
+        ], {
+          duration: 620,
+          delay: delay,
+          easing: 'cubic-bezier(.3,.4,.3,1)'
+        });
+      } catch (e) {}
+
+      var glow;
+      if (side === 'left') {
+        glow = 'inset 8px 0 14px -10px rgba(255,255,255,.7)';
+      } else if (side === 'right') {
+        glow = 'inset -8px 0 14px -10px rgba(255,255,255,.7)';
+      } else {
+        glow = 'inset 0 -8px 14px -10px rgba(255,255,255,.7)';
+      }
+
+      try {
+        glassSheen.animate([
+          { boxShadow: 'inset 0 0 0 0 rgba(255,255,255,0)', opacity: 0.42 },
+          { boxShadow: glow, opacity: 0.6, offset: 0.18 },
+          { boxShadow: glow, opacity: 0.45, offset: 0.42 },
+          { boxShadow: 'inset 0 0 0 0 rgba(255,255,255,0)', opacity: 0.42 }
+        ], {
+          duration: 700,
+          delay: delay,
+          easing: 'cubic-bezier(.3,.6,.3,1)'
+        });
+      } catch (e) {}
+    }
+
+    function playPop(strength) {
+      strength = (strength == null) ? 1 : strength;
+      if (popAnim) { try { popAnim.cancel(); } catch (e) {} popAnim = null; }
+
+      var a = 0.01 * strength;
+      var b = 0.004 * strength;
+      var ease = 'cubic-bezier(.35,0,.3,1)';
+
+      try {
+        popAnim = dockEl.animate([
+          { transform: 'scale(1,1)', easing: ease },
+          { transform: 'scale(' + (1 + a) + ',' + (1 - a) + ')', offset: 0.32, easing: ease },
+          { transform: 'scale(' + (1 - b) + ',' + (1 + b) + ')', offset: 0.66, easing: ease },
+          { transform: 'scale(1,1)' }
+        ], {
+          duration: 460,
+          easing: 'linear'
+        });
+        popAnim.onfinish = function () { popAnim = null; };
+      } catch (e) {}
+    }
+
+    /* ======================= 工具坞：吸附 ======================= */
+    function nearestSide() {
+      var w = curW(), h = curH();
+      var vw = window.innerWidth, vh = window.innerHeight;
+      var cx = dockX + w / 2, cy = dockY + h / 2;
+
+      var dL = cx, dR = vw - cx, dB = vh - cy;
+      var best = 'bottom', min = dB;
+
+      if (dL < min) { min = dL; best = 'left'; }
+      if (dR < min) { min = dR; best = 'right'; }
+      return best;
+    }
+
+    function snapTo(side, animate) {
+      var oldW = curW(), oldH = curH();
+      var cx = dockX + oldW / 2, cy = dockY + oldH / 2;
+
+      var layoutChanged = (side !== currentSide);
+      if (layoutChanged) {
+        toolbar.classList.toggle('vertical', side !== 'bottom');
+        void toolbar.offsetWidth;
+        measureDock();
+        moveToolSlider(S.tool, true);
+      }
+      currentSide = side;
+
+      var w = curW(), h = curH();
+      var vw = window.innerWidth, vh = window.innerHeight;
+      var m = 12;
+      var x, y;
+
+      if (side === 'left') {
+        x = m;
+        y = clamp(cy - h / 2, m, vh - h - m);
+      } else if (side === 'right') {
+        x = vw - w - m;
+        y = clamp(cy - h / 2, m, vh - h - m);
+      } else {
+        x = clamp(cx - w / 2, m, vw - w - m);
+        y = vh - h - 24;
+      }
+
+      dockWrap.classList.remove('dragging');
+      if (!animate) dockWrap.style.transition = 'none';
+
+      dockX = x; dockY = y;
+      applyDockPos();
+      scheduleDockRefraction();
+
+      if (!animate) {
+        requestAnimationFrame(function () { dockWrap.style.transition = ''; });
+      } else {
+        playFluidCollide(side, 1, 180);
+      }
+
+      scheduleSave();
+    }
+
+    /* ======================= 工具坞：折叠 ======================= */
+    function setCollapsed(target, animate) {
+      if (collapsed === target) return;
+
+      var oldW = curW(), oldH = curH();
+      var isV = (currentSide !== 'bottom');
+
+      var anchorX, anchorY;
+      if (!isV) {
+        anchorX = dockX;
+        anchorY = dockY + oldH;
+      } else {
+        anchorX = (currentSide === 'left') ? dockX : (dockX + oldW);
+        anchorY = dockY;
+      }
+
+      collapsed = target;
+
+      if (animate) {
+        dockWrap.style.transition = 'transform .48s var(--spring)';
+        clearTimeout(collapseTrT);
+        collapseTrT = setTimeout(function () { dockWrap.style.transition = ''; }, 540);
+      }
+
+      if (!animate) {
+        dockEl.classList.add('no-trans');
+        dockWrap.style.transition = 'none';
+      }
+
+      dockEl.classList.toggle('collapsed', collapsed);
+      applyDockSize();
+
+      var newW = curW(), newH = curH();
+
+      if (!isV) {
+        dockX = anchorX;
+        dockY = anchorY - newH;
+      } else {
+        if (currentSide === 'left') {
+          dockX = anchorX;
+        } else {
+          dockX = anchorX - newW;
+        }
+        dockY = anchorY;
+      }
+
+      clampDockPos();
+      applyDockPos();
+      scheduleDockRefraction();
+
+      if (collapsed) hidePopover();
+
+      if (!animate) {
+        requestAnimationFrame(function () {
+          dockEl.classList.remove('no-trans');
+          dockWrap.style.transition = '';
+        });
+      } else {
+        playPop(0.9);
+      }
+
+      scheduleSave();
+    }
+
+    /* ======================= 工具坞：拖动 ======================= */
+    var dragState = null;
+
+    function beginDockDrag(e, isFab, isGrip) {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      hidePopover();
+      cancelFluid();
+
+      dragState = {
+        id: e.pointerId,
+        sx: e.clientX,
+        sy: e.clientY,
+        ox: dockX,
+        oy: dockY,
+        moved: false,
+        isFab: isFab,
+        isGrip: isGrip
+      };
+      dockWrap.classList.add('dragging');
+      try { dockEl.setPointerCapture(e.pointerId); } catch (err) {}
+    }
+
+    function updateDockGlow(e) {
+      var r = dockEl.getBoundingClientRect();
+      dockEl.style.setProperty('--gx', (e.clientX - r.left) + 'px');
+      dockEl.style.setProperty('--gy', (e.clientY - r.top) + 'px');
+      dockEl.style.setProperty('--press', '1');
+    }
+
+    dockEl.addEventListener('pointerdown', function (e) {
+      updateDockGlow(e);
+
+      var t = e.target;
+      if (!t || !t.closest) return;
+
+      if (t.closest('#fab')) { beginDockDrag(e, true, false); return; }
+      if (t.closest('#grip')) { beginDockDrag(e, false, true); return; }
+      if (t.closest('button')) return;
+      beginDockDrag(e, false, false);
+    });
+
+    window.addEventListener('pointermove', function (e) {
+      if (!dragState || e.pointerId !== dragState.id) return;
+      var dx = e.clientX - dragState.sx;
+      var dy = e.clientY - dragState.sy;
+
+      if (!dragState.moved && (Math.abs(dx) + Math.abs(dy) > 6)) dragState.moved = true;
+      if (!dragState.moved) return;
+
+      dockX = dragState.ox + dx;
+      dockY = dragState.oy + dy;
+      clampDockPos();
+      scheduleDockPos();
+    }, { passive: false });
+
+    function endDockDrag(e) {
+      if (!dragState || e.pointerId !== dragState.id) return;
+      var st = dragState;
+      dragState = null;
+      if (dockPosRaf) { cancelAnimationFrame(dockPosRaf); dockPosRaf = null; applyDockPos(); }
+      dockWrap.classList.remove('dragging');
+
+      if (st.moved) {
+        snapTo(nearestSide(), true);
+      } else if (st.isFab) {
+        setCollapsed(false, true);
+      } else if (st.isGrip) {
+        setCollapsed(true, true);
+      }
+    }
+
+    window.addEventListener('pointerup', function (e) {
+      dockEl.style.setProperty('--press', '0');
+      if (dragState) endDockDrag(e);
+    });
+    window.addEventListener('pointercancel', function (e) {
+      dockEl.style.setProperty('--press', '0');
+      if (dragState) endDockDrag(e);
+    });
+
+    /* ======================= 初始化 ======================= */
+    function initDock() {
+      var wasCollapsed = collapsed;
+      collapsed = false;
+      dockEl.classList.remove('collapsed');
+
+      toolbar.classList.toggle('vertical', currentSide !== 'bottom');
+      void toolbar.offsetWidth;
+
+      var iw = dockInner.offsetWidth;
+      var ih = dockInner.offsetHeight;
+      dockW = iw * S.dockScale;
+      dockH = ih * S.dockScale;
+      dockInner.style.transform = 'translate(-50%,-50%) scale(' + S.dockScale + ')';
+      fab.style.transform = 'translate(-50%,-50%) scale(' + S.dockScale + ')';
+
+      collapsed = wasCollapsed;
+      dockEl.classList.toggle('collapsed', collapsed);
+      applyDockSize();
+
+      if (savedPosValid) {
+        dockX = savedPos.x;
+        dockY = savedPos.y;
+      } else {
+        dockX = (window.innerWidth - curW()) / 2;
+        dockY = window.innerHeight - curH() - 26;
+      }
+      clampDockPos();
+      applyDockPos();
+
+      applyRadius();
+      applyGlass();
+      moveToolSlider(S.tool, true);
+    }
+
+    function initScaleSlider() {
+      dockScaleSlider.value = Math.round(S.dockScale * 100);
+      dockScaleVal.textContent = Math.round(S.dockScale * 100) + '%';
+
+      radiusSlider.value = Math.round(S.radiusScale * 100);
+      radiusVal.textContent = Math.round(S.radiusScale * 100) + '%';
+
+      glassAlphaSlider.value = Math.round(S.glassAlpha * 100);
+      glassAlphaVal.textContent = Math.round(S.glassAlpha * 100) + '%';
+
+      glassBlurSlider.value = Math.round(S.glassBlur);
+      glassBlurVal.textContent = Math.round(S.glassBlur) + 'px';
+
+      refractHeightSlider.value = Math.round(S.refractHeight);
+      refractHeightVal.textContent = Math.round(S.refractHeight) + '';
+
+      refractAmountSlider.value = Math.round(S.refractAmount);
+      refractAmountVal.textContent = Math.round(S.refractAmount) + '';
+
+      palmSizeSlider.value = Math.round(S.palmThreshold);
+      palmSizeVal.textContent = Math.round(S.palmThreshold) + 'px';
+      updatePalmUI();
+      syncAllRanges();
+    }
+
+    /* ======================= 全屏 ======================= */
+    function isFullscreen() {
+      return !!(document.fullscreenElement ||
+                document.webkitFullscreenElement ||
+                document.mozFullScreenElement ||
+                document.msFullscreenElement);
+    }
+
+    function tryFullscreen() {
+      if (isFullscreen()) return;
+      var el = document.documentElement;
+      var fn = el.requestFullscreen ||
+               el.webkitRequestFullscreen ||
+               el.webkitRequestFullScreen ||
+               el.mozRequestFullScreen ||
+               el.msRequestFullscreen;
+      if (!fn) return;
+      try {
+        var p = fn.call(el);
+        if (p && typeof p.catch === 'function') p.catch(function () {});
+      } catch (e) {}
+    }
+
+    function exitFullscreen() {
+      if (!isFullscreen()) return;
+      var fn = document.exitFullscreen ||
+               document.webkitExitFullscreen ||
+               document.webkitCancelFullScreen ||
+               document.mozCancelFullScreen ||
+               document.msExitFullscreen;
+      if (!fn) return;
+      try {
+        var p = fn.call(document);
+        if (p && typeof p.catch === 'function') p.catch(function () {});
+      } catch (e) {}
+    }
+
+    function updateFsBtnUI() {
+      var fs = isFullscreen();
+      fsBtn.textContent = fs ? '退出全屏' : '进入全屏';
+      fsBtn.classList.toggle('exit', fs);
+    }
+
+    fsBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (isFullscreen()) exitFullscreen();
+      else tryFullscreen();
+      /* fullscreenchange 事件会再次同步按钮，这里先乐观更新 */
+      setTimeout(updateFsBtnUI, 60);
+    });
+
+    ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange']
+      .forEach(function (ev) {
+        document.addEventListener(ev, updateFsBtnUI);
+      });
+
+    function pickFile() {
+      tryFullscreen();
+      hidePopover();
+      fileInput.click();
+    }
+
+    btnOpen.addEventListener('click', function (e) { e.stopPropagation(); pickFile(); });
+    emptyOpen.addEventListener('click', pickFile);
+
+    fileInput.addEventListener('change', function () {
+      var f = fileInput.files && fileInput.files[0];
+      if (f) loadPDF(f);
+      fileInput.value = '';
+    });
+
+    /* 拖拽文件 */
+    var dragDepth = 0;
+
+    window.addEventListener('dragenter', function (e) {
+      e.preventDefault();
+      dragDepth++;
+      dropzone.classList.add('active');
+    });
+
+    window.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    });
+
+    window.addEventListener('dragleave', function (e) {
+      e.preventDefault();
+      dragDepth--;
+      if (dragDepth <= 0) {
+        dragDepth = 0;
+        dropzone.classList.remove('active');
+      }
+    });
+
+    window.addEventListener('drop', function (e) {
+      e.preventDefault();
+      dragDepth = 0;
+      dropzone.classList.remove('active');
+
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (!f) return;
+
+      tryFullscreen();
+
+      if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) loadPDF(f);
+      else showHint('请拖入 PDF 文件', 1800);
+    });
+
+    /* 窗口变化 */
+    window.addEventListener('resize', function () {
+      measureDock();
+      clampDockPos();
+      applyDockPos();
+      scheduleDockRefraction();
+      if (isPopoverOpen()) positionPopover();
+      requestRender();
+      scheduleRerender();
+      scheduleCurrentPageUpdate();
+    });
+
+    window.addEventListener('orientationchange', function () {
+      setTimeout(function () {
+        measureDock();
+        clampDockPos();
+        applyDockPos();
+        scheduleDockRefraction();
+        if (isPopoverOpen()) positionPopover();
+        requestRender();
+        scheduleRerender();
+        scheduleCurrentPageUpdate();
+      }, 260);
+    });
+
+    if (window.ResizeObserver) {
+      new ResizeObserver(function () {
+        scheduleDockRefraction();
+      }).observe(dockEl);
+      new ResizeObserver(function () {
+        schedulePopoverRefraction();
+      }).observe(popover);
+    }
+
+    /* ======================= 启动 ======================= */
+    loadSettings();
+
+    renderPalette();
+    updatePenTypeUI();
+    applyPenSlider();
+    updateToolUI();
+    initScaleSlider();
+    updateFsBtnUI();
+
+    requestAnimationFrame(function () {
+      initDock();
+      requestRender();
+    });
+
+  })();
+  </script>
+</body>
+</html>
