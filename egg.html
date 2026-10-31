@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+  <meta content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" name="viewport">
+  <meta content="#000000" name="theme-color">
+  <meta content="noindex" name="robots">
+  <title>* (Behind the tree.).</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    #center {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .man {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      color: black;
+    }
+
+    .man img {
+      position: absolute;
+      inset: 0;
+      height: 100%;
+      width: 100%;
+      object-fit: contain;
+      image-rendering: pixelated;
+    }
+
+    .man a {
+      position: absolute;
+      display: block;
+      height: 60px;
+      width: 120px;
+      top: -10%;
+      left: 30%;
+      z-index: 2;
+    }
+  </style>
+</head>
+<body>
+  <main id="center">
+    <div class="man">
+      <img alt="Tree" src="tree.gif">
+      <a href="egg/" aria-label="egg">&nbsp;</a>
+    </div>
+  </main>
+
+  <script>
+  (function () {
+    'use strict';
+
+    var audio = new Audio('deltarune_piano_collections_by_trevor_alan_gomes.ogg');
+    audio.loop = false;
+    audio.preload = 'auto';
+    audio.volume = 1;
+
+    var redirected = false;
+    var fsRetryTimer = null;
+
+    audio.addEventListener('ended', function () {
+      if (redirected) return;
+      redirected = true;
+      window.location.href = 'index.html';
+    });
+
+    function isFullscreen() {
+      return !!(document.fullscreenElement ||
+                document.webkitFullscreenElement ||
+                document.mozFullScreenElement ||
+                document.msFullscreenElement);
+    }
+
+    function enterFullscreen() {
+      if (isFullscreen()) return;
+      var el = document.documentElement;
+      var fn = el.requestFullscreen ||
+               el.webkitRequestFullscreen ||
+               el.mozRequestFullScreen ||
+               el.msRequestFullscreen;
+      if (!fn) return;
+      try {
+        var r = fn.call(el);
+        if (r && typeof r.catch === 'function') {
+          r.catch(function () {});
+        }
+      } catch (e) {}
+    }
+
+    function forceFullscreenSoon() {
+      enterFullscreen();
+      clearTimeout(fsRetryTimer);
+      fsRetryTimer = setTimeout(function () {
+        if (!isFullscreen()) enterFullscreen();
+      }, 120);
+    }
+
+    function playAudio() {
+      var p = audio.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch(function () {});
+      }
+    }
+
+    function onGesture() {
+      if (audio.paused) playAudio();
+      forceFullscreenSoon();
+    }
+
+    playAudio();
+    forceFullscreenSoon();
+
+    ['click', 'mousedown', 'mouseup', 'touchstart', 'touchend',
+     'pointerdown', 'pointerup', 'keydown'].forEach(function (ev) {
+      document.addEventListener(ev, onGesture, { passive: true });
+    });
+
+    document.addEventListener('fullscreenchange', function () {
+      if (!isFullscreen() && !redirected) {
+        forceFullscreenSoon();
+      }
+    });
+
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) {
+        audio.pause();
+      } else if (!redirected) {
+        forceFullscreenSoon();
+        if (audio.paused) playAudio();
+      }
+    });
+
+    window.addEventListener('load', forceFullscreenSoon);
+  })();
+  </script>
+</body>
+</html>
