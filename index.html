@@ -350,7 +350,7 @@
     flex:1 1 auto;min-width:132px;
     height:var(--th);margin:0;padding:0;
     background:transparent;outline:none;cursor:pointer;
-    touch-action:none;
+    touch-action:pan-y;
   }
   input[type=range].sl:disabled{opacity:.4;cursor:default;}
 
@@ -441,6 +441,7 @@
 
   .camera-btn{
     flex:1 1 auto;
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
     height:38px;
     border:none;
     border-radius:calc(var(--radius-base) * 0.75);
@@ -452,11 +453,49 @@
     cursor:pointer;
     transition:background .2s ease, color .2s ease, transform .18s var(--soft), border-radius .3s ease;
   }
-  .camera-btn:active{transform:scale(.95);}
-  .fs-btn.exit, .camera-btn.off{
-    background:rgba(0,0,0,.06);
-    color:#6b6b6b;
+  .camera-btn svg{width:17px;height:17px;flex:0 0 auto;}
+  .camera-btn:active{transform:scale(.92);background:rgba(43,108,246,.22);}
+
+  .switch-row{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;
+    margin-top:14px;padding:0 2px;
   }
+  .switch-row .pane-title{margin:0;padding:0;}
+  .switch-row.first{margin-top:0;}
+
+  /* 胶囊开关：玻璃滑钮 + 蓝色轨道，按下时滑钮拉长 */
+  .cap-switch{
+    position:relative;flex:0 0 auto;
+    width:52px;height:30px;padding:0;border:none;border-radius:999px;
+    background:rgba(0,0,0,.11);
+    cursor:pointer;
+    box-shadow:inset 0 0 0 .5px rgba(0,0,0,.05);
+    transition:background .26s ease, transform .18s var(--soft);
+  }
+  .cap-switch i{
+    position:absolute;left:3px;top:3px;
+    width:24px;height:24px;border-radius:999px;
+    border:1px solid rgba(255,255,255,.95);
+    background:linear-gradient(180deg,#ffffff,#f3f5f8);
+    box-shadow:0 0 0 .5px rgba(0,0,0,.09), 0 2px 6px rgba(0,0,0,.2);
+    transition:transform .32s var(--spring), width .2s var(--soft);
+  }
+  .cap-switch i::after{
+    content:"";position:absolute;left:50%;top:50%;
+    width:2px;height:8px;margin:-4px 0 0 -1px;border-radius:2px;
+    background:rgba(0,0,0,.18);
+    transition:background .26s ease;
+  }
+  .cap-switch.on{background:var(--accent);}
+  .cap-switch.on i{transform:translateX(22px);}
+  .cap-switch.on i::after{background:var(--accent);}
+  .cap-switch:active{transform:scale(.94);}
+  .cap-switch:active i{width:29px;}
+  .cap-switch.on:active i{transform:translateX(17px);}
+  .cap-switch:disabled{opacity:.4;cursor:default;}
+
+  .rot-row{display:flex;gap:8px;}
+  #paneRot{min-width:230px;}
 
   #colorPicker{
     position:fixed;left:-9999px;top:-9999px;
@@ -488,16 +527,14 @@
   }
   .empty-sub{font-size:14px;color:var(--muted);margin-bottom:30px;letter-spacing:.5px;}
   .empty-btn{
-    border:1px solid #e2e2e2;background:#fff;color:var(--text);
+    border:none;background:rgba(43,108,246,.14);color:var(--accent);
     font-family:inherit;font-size:15px;letter-spacing:1px;
     padding:13px 34px;
     border-radius:calc(var(--radius-base) * 0.75);
     cursor:pointer;
-    box-shadow:0 4px 16px rgba(0,0,0,.06);
-    transition:transform .16s, box-shadow .16s, border-color .16s, border-radius .3s ease;
+    transition:background .2s ease, color .2s ease, transform .18s var(--soft), border-radius .3s ease;
   }
-  .empty-btn:active{transform:scale(.97);}
-  .empty-btn:hover{border-color:#cfcfcf;box-shadow:0 6px 22px rgba(0,0,0,.09);}
+  .empty-btn:active{transform:scale(.94);background:rgba(43,108,246,.22);}
 
   #dropzone{
     position:fixed;inset:0;z-index:100;
@@ -530,14 +567,15 @@
   }
   @keyframes spin{to{transform:rotate(360deg);}}
 
-  #paneSet{
-    max-height:calc(100vh - 150px);
-    max-height:calc(100dvh - 150px);
-    overflow-y:auto;overscroll-behavior:contain;
+  .pane{
+    overflow-x:hidden;overflow-y:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+    touch-action:pan-y;
     scrollbar-width:none;
     margin:-4px -8px;padding:4px 8px;
   }
-  #paneSet::-webkit-scrollbar{display:none;}
+  .pane::-webkit-scrollbar{display:none;}
 
   .palm-ring{
     position:fixed;left:0;top:0;z-index:9;pointer-events:none;
@@ -591,11 +629,18 @@
               <path d="M5.5 21.2h13.6"/>
             </svg>
           </button>
-          <button id="btnOpen" class="ico" title="打开 PDF">
+          <button id="btnOpen" class="ico" title="打开文件（PDF / 图片）">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                  stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/>
               <path d="M14 3v5h5"/>
+            </svg>
+          </button>
+          <button id="btnRot" class="ico" title="旋转">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+              <path d="M21 3v5h-5"/>
             </svg>
           </button>
           <button id="btnSet" class="ico" title="设置">
@@ -631,7 +676,7 @@
         <svg width="16" height="16" viewBox="0 0 20 20" style="color:#cfcfcf;flex:0 0 auto">
           <circle cx="10" cy="10" r="2.2" fill="currentColor"/>
         </svg>
-        <input type="range" class="sl" id="penSize" min="1" max="100" value="25">
+        <input type="range" class="sl" id="penSize" min="0" max="1000" step="1" value="692">
         <div id="penPreviewBox"><div id="penPreview"></div></div>
       </div>
     </div>
@@ -642,6 +687,25 @@
         <input type="range" class="sl" id="clearSlider" min="0" max="100" step="any" value="0">
       </div>
       <div class="pane-note">滑至最右端松手即可清屏</div>
+    </div>
+
+    <div class="pane" id="paneRot">
+      <div class="pane-title">旋转页面</div>
+      <div class="rot-row">
+        <button id="rotL" class="camera-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          左转 90°
+        </button>
+        <button id="rotR" class="camera-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+          右转 90°
+        </button>
+      </div>
+      <div class="switch-row">
+        <span class="pane-title">应用到全部页面</span>
+        <button id="rotAllSw" class="cap-switch" role="switch" aria-checked="false"><i></i></button>
+      </div>
+      <div class="pane-note">关闭时只旋转当前页</div>
     </div>
 
     <div class="pane" id="paneSet">
@@ -675,18 +739,18 @@
         <input type="range" class="sl" id="refractAmountSlider" min="0" max="60" value="24">
         <span class="val" id="refractAmountVal">24</span>
       </div>
-      <div class="pane-title mt">手掌擦除</div>
-      <div class="slider-row">
-        <button id="palmBtn" class="camera-btn">手掌擦除：开启</button>
+      <div class="switch-row">
+        <span class="pane-title">手掌擦除</span>
+        <button id="palmBtn" class="cap-switch on" role="switch" aria-checked="true"><i></i></button>
       </div>
       <div class="slider-row">
         <input type="range" class="sl" id="palmSizeSlider" min="24" max="160" value="56">
         <span class="val" id="palmSizeVal">56px</span>
       </div>
       <div class="pane-note">触点大于该尺寸，或三指同时按下</div>
-      <div class="pane-title mt">全屏显示</div>
-      <div class="slider-row">
-        <button id="fsBtn" class="camera-btn fs-btn">进入全屏</button>
+      <div class="switch-row">
+        <span class="pane-title">全屏显示</span>
+        <button id="fsBtn" class="cap-switch" role="switch" aria-checked="false"><i></i></button>
       </div>
       <div class="pane-title mt">拍照</div>
       <div class="slider-row">
@@ -703,21 +767,21 @@
   <div id="empty">
     <div class="empty-card">
       <div class="empty-title">授课白板</div>
-      <div class="empty-sub">打开或拖入一个 PDF 文件开始授课</div>
-      <button class="empty-btn" id="emptyOpen">打开 PDF</button>
+      <div class="empty-sub">打开或拖入 PDF / 图片文件开始授课</div>
+      <button class="empty-btn" id="emptyOpen">打开文件</button>
     </div>
   </div>
 
   <div id="dropzone">
     <div class="drop-inner">
-      <div class="drop-title">释放以打开 PDF</div>
+      <div class="drop-title">释放以打开文件</div>
       <div class="drop-sub">支持拖拽文件到窗口任意位置</div>
     </div>
   </div>
 
   <div id="loading"><div class="spinner"></div></div>
 
-  <input type="file" id="fileInput" accept="application/pdf" hidden>
+  <input type="file" id="fileInput" accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.avif,.heic,.heif,.tif,.tiff" multiple hidden>
 
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script>
@@ -778,6 +842,11 @@
     var cameraInput = document.getElementById('cameraInput');
     var fsBtn = document.getElementById('fsBtn');
     var penBar = document.getElementById('ptBar');
+    var btnRot = document.getElementById('btnRot');
+    var paneRot = document.getElementById('paneRot');
+    var rotL = document.getElementById('rotL');
+    var rotR = document.getElementById('rotR');
+    var rotAllSw = document.getElementById('rotAllSw');
     var palmBtn = document.getElementById('palmBtn');
     var palmSizeSlider = document.getElementById('palmSizeSlider');
     var palmSizeVal = document.getElementById('palmSizeVal');
@@ -804,7 +873,8 @@
       penColor: '#1b1b1b',
       penSize: 4.5,
       eraserSize: 30,
-      penSliderVal: 25,
+      penT: 692,
+      rotateAll: false,
 
       dockScale: 1,
       radiusScale: 1,
@@ -819,6 +889,10 @@
       fileKey: '',
       currentPage: 0
     };
+
+    /* 笔粗细：0~1000 的指数刻度，细端分辨率更高 */
+    var PEN_MIN = 0.35, PEN_MAX = 14;
+    function penSizeFromT(t) { return PEN_MIN * Math.pow(PEN_MAX / PEN_MIN, t / 1000); }
 
     var palette = ['#1b1b1b', '#e5484d', '#2563eb', '#16a34a', '#f59e0b', '#7c3aed'];
 
@@ -980,7 +1054,7 @@
 
     function saveSettings() {
       var data = {
-        v: 3,
+        v: 4,
         dockScale: S.dockScale,
         radiusScale: S.radiusScale,
         glassAlpha: S.glassAlpha,
@@ -991,7 +1065,8 @@
         palmThreshold: S.palmThreshold,
         penType: S.penType,
         penColor: S.penColor,
-        penSliderVal: S.penSliderVal,
+        penT: S.penT,
+        rotateAll: S.rotateAll,
         palette: palette,
         tool: S.tool,
         currentSide: currentSide,
@@ -1067,9 +1142,14 @@
         if (typeof d.penColor === 'string' && d.penColor.length > 0) {
           S.penColor = d.penColor;
         }
-        if (typeof d.penSliderVal === 'number' && d.penSliderVal >= 1 && d.penSliderVal <= 100) {
-          S.penSliderVal = d.penSliderVal;
+        if (typeof d.penT === 'number' && d.penT >= 0 && d.penT <= 1000) {
+          S.penT = d.penT;
+        } else if (typeof d.penSliderVal === 'number' && d.penSliderVal >= 1 && d.penSliderVal <= 100) {
+          /* 旧版本的粗细刻度 → 换算成新刻度，保持原有粗细 */
+          var oldSize = 1.5 + (d.penSliderVal / 100) * 12;
+          S.penT = clamp(Math.round(1000 * Math.log(oldSize / PEN_MIN) / Math.log(PEN_MAX / PEN_MIN)), 0, 1000);
         }
+        if (typeof d.rotateAll === 'boolean') S.rotateAll = d.rotateAll;
         if (Array.isArray(d.palette) && d.palette.length > 0) {
           var clean = [];
           for (var i = 0; i < d.palette.length && i < 20; i++) {
@@ -1313,7 +1393,7 @@
 
     function drawStroke(ctx, st, z, ox, oy) {
       var pts = st.pts;
-      var lw = Math.max(0.4, st.size * z);
+      var lw = Math.max(0.25, st.size * z);
       var type = st.type || 'pen';
       var color = st.color;
 
@@ -1335,7 +1415,7 @@
     function drawNormal(ctx, pts, lw, color, z, ox, oy) {
       if (pts.length === 1) {
         ctx.beginPath();
-        ctx.arc(ox + z * pts[0].x, oy + z * pts[0].y, Math.max(0.5, lw / 2), 0, Math.PI * 2);
+        ctx.arc(ox + z * pts[0].x, oy + z * pts[0].y, Math.max(0.2, lw / 2), 0, Math.PI * 2);
         ctx.fill();
         return;
       }
@@ -1485,18 +1565,32 @@
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, cw, ch);
-      try { ctx.drawImage(p.image, 0, 0, cw, ch); } catch (e) {}
+
+      /* 按页面旋转角度把图片画进画布（rot：0~3 个 90°，顺时针） */
+      var rot = p.rot || 0;
+      try {
+        ctx.save();
+        if (rot === 1)      { ctx.translate(cw, 0);  ctx.rotate(Math.PI / 2);  ctx.drawImage(p.image, 0, 0, ch, cw); }
+        else if (rot === 2) { ctx.translate(cw, ch); ctx.rotate(Math.PI);      ctx.drawImage(p.image, 0, 0, cw, ch); }
+        else if (rot === 3) { ctx.translate(0, ch);  ctx.rotate(-Math.PI / 2); ctx.drawImage(p.image, 0, 0, ch, cw); }
+        else                { ctx.drawImage(p.image, 0, 0, cw, ch); }
+        ctx.restore();
+      } catch (e) {}
       return Promise.resolve();
     }
 
     function renderPage(p, token) {
       var dpr = Math.min(window.devicePixelRatio || 1, 2);
-      var scale = S.zoom * dpr;
-      var maxPx = 2600;
-      if (S.baseW * scale > maxPx) scale = maxPx / S.baseW;
+      var rotation = ((((p.pdfPage.rotate || 0) + (p.rot || 0) * 90) % 360) + 360) % 360;
+      var v1 = p.pdfPage.getViewport({ scale: 1, rotation: rotation });
+
+      /* 以目标显示宽度为准计算分辨率（不同尺寸的页面混排也一样清晰） */
+      var tw = S.baseW * S.zoom * dpr;
+      if (tw > 2600) tw = 2600;
+      var scale = tw / v1.width;
       if (scale < 0.05) scale = 0.05;
 
-      var vp = p.pdfPage.getViewport({ scale: scale });
+      var vp = p.pdfPage.getViewport({ scale: scale, rotation: rotation });
       var cw = Math.max(1, Math.floor(vp.width));
       var ch = Math.max(1, Math.floor(vp.height));
 
@@ -1529,96 +1623,149 @@
       }, 260);
     }
 
-    /* ======================= 打开 PDF ======================= */
+    /* ======================= 打开文件（PDF / 图片，可多选） ======================= */
     function setLoading(on) { loadingEl.classList.toggle('show', !!on); }
 
-    function loadPDF(file) {
-      if (typeof pdfjsLib === 'undefined') {
-        showHint('PDF 组件加载失败', 2000);
-        return;
-      }
-      S.fileKey = (file.name || 'pdf') + '_' + (file.size || 0);
-      setLoading(true);
-      var reader = new FileReader();
-      reader.onload = function () {
-        var task = pdfjsLib.getDocument({ data: new Uint8Array(reader.result) });
-        task.promise.then(function (pdf) {
-          S.pdf = pdf;
-          return buildPages();
-        }).then(function () {
-          setLoading(false);
-          emptyEl.classList.add('hidden');
-          hidePopover();
-          tryFullscreen();
-          S.currentPage = 0;
-          var saved = restorePageIndex();
-          if (saved > 0) goToPage(saved);
-        }).catch(function (err) {
-          console.error(err);
-          setLoading(false);
-          showHint('无法打开该 PDF 文件', 2200);
-        });
-      };
-      reader.onerror = function () {
-        setLoading(false);
-        showHint('文件读取失败', 2000);
-      };
-      reader.readAsArrayBuffer(file);
+    function isPdfFile(f) {
+      return f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '');
+    }
+    function isImageFile(f) {
+      return /^image\//.test(f.type || '') ||
+             /\.(jpe?g|png|gif|webp|bmp|svg|avif|ico|tiff?|heic|heif|jfif)$/i.test(f.name || '');
     }
 
-    function buildPages() {
+    function readBuffer(file) {
+      return new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () { resolve(reader.result); };
+        reader.onerror = function () { reject(new Error('read')); };
+        reader.readAsArrayBuffer(file);
+      });
+    }
+
+    function loadImageFile(file) {
+      return new Promise(function (resolve, reject) {
+        var url = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function () {
+          URL.revokeObjectURL(url);
+          if (!img.naturalWidth || !img.naturalHeight) reject(new Error('size'));
+          else resolve(img);
+        };
+        img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('decode')); };
+        img.src = url;
+      });
+    }
+
+    function resetDocument() {
+      for (var i = 0; i < S.pages.length; i++) {
+        var p = S.pages[i];
+        if (p.renderTask) { try { p.renderTask.cancel(); } catch (e) {} }
+        p.token++;
+      }
       content.innerHTML = '';
       S.pages = [];
       S.strokes = [];
+      S.baseW = 0;
+      S.totalH = 0;
       activeStroke = null;
+      clearAllPalms();
       invalidateInkCache();
+    }
 
-      return S.pdf.getPage(1).then(function (first) {
-        var v0 = first.getViewport({ scale: 1 });
-        var baseW = v0.width;
-        S.baseW = baseW;
+    function addPdfPage(pg) {
+      var vp = pg.getViewport({ scale: 1 });
+      if (!S.baseW) S.baseW = vp.width;
+      var h = S.baseW * (vp.height / vp.width);
 
-        var total = S.pdf.numPages;
+      var el = document.createElement('div');
+      el.className = 'page';
+      el.style.width = S.baseW + 'px';
+      el.style.height = h + 'px';
+
+      var canvas = document.createElement('canvas');
+      el.appendChild(canvas);
+      content.appendChild(el);
+
+      S.pages.push({
+        type: 'pdf',
+        pdfPage: pg,
+        h: h,
+        offsetY: 0,
+        el: el,
+        canvas: canvas,
+        rendered: false,
+        rendering: false,
+        token: 0,
+        renderTask: null,
+        rot: 0
+      });
+    }
+
+    function appendPdfFile(file) {
+      if (typeof pdfjsLib === 'undefined') return Promise.reject(new Error('pdfjs'));
+      return readBuffer(file).then(function (buf) {
+        return pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+      }).then(function (pdf) {
+        S.pdf = pdf;
         var chain = Promise.resolve();
-
-        for (var i = 1; i <= total; i++) {
+        for (var i = 1; i <= pdf.numPages; i++) {
           (function (idx) {
             chain = chain.then(function () {
-              var pget = (idx === 1) ? Promise.resolve(first) : S.pdf.getPage(idx);
-              return pget.then(function (pg) {
-                var vp = pg.getViewport({ scale: 1 });
-                var h = baseW * (vp.height / vp.width);
-
-                var el = document.createElement('div');
-                el.className = 'page';
-                el.style.width = baseW + 'px';
-                el.style.height = h + 'px';
-
-                var canvas = document.createElement('canvas');
-                el.appendChild(canvas);
-                content.appendChild(el);
-
-                S.pages.push({
-                  type: 'pdf',
-                  pdfPage: pg,
-                  h: h,
-                  offsetY: 0,
-                  el: el,
-                  canvas: canvas,
-                  rendered: false,
-                  rendering: false,
-                  token: 0,
-                  renderTask: null
-                });
-              });
+              return pdf.getPage(idx).then(addPdfPage);
             });
           })(i);
         }
+        return chain;
+      });
+    }
 
-        return chain.then(function () {
-          recalcOffsets();
-          finishBuild();
+    function appendImageFile(file) {
+      return loadImageFile(file).then(function (img) { createImagePage(img); });
+    }
+
+    function openFiles(list) {
+      var files = Array.prototype.slice.call(list || []).filter(function (f) {
+        return isPdfFile(f) || isImageFile(f);
+      });
+      if (!files.length) { showHint('请选择 PDF 或图片文件', 1800); return; }
+
+      var key = files.map(function (f) { return (f.name || 'file') + '_' + (f.size || 0); }).join('|');
+      S.fileKey = key.length > 160 ? key.slice(0, 120) + '_' + files.length + '_' + key.length : key;
+
+      setLoading(true);
+      resetDocument();
+
+      var failed = 0, chain = Promise.resolve();
+      files.forEach(function (f) {
+        chain = chain.then(function () {
+          return (isPdfFile(f) ? appendPdfFile(f) : appendImageFile(f)).catch(function (err) {
+            failed++;
+            console.warn('[open]', f.name, err);
+          });
         });
+      });
+
+      chain.then(function () {
+        setLoading(false);
+        if (!S.pages.length) {
+          showHint(typeof pdfjsLib === 'undefined' && files.some(isPdfFile) && !files.some(isImageFile)
+            ? 'PDF 组件加载失败' : '无法打开所选文件', 2200);
+          return;
+        }
+        recalcOffsets();
+        finishBuild();
+        emptyEl.classList.add('hidden');
+        hidePopover();
+        tryFullscreen();
+        S.currentPage = 0;
+        var saved = restorePageIndex();
+        if (saved > 0) goToPage(saved);
+        if (failed) showHint(failed + ' 个文件无法打开', 2200);
+      }).catch(function (err) {
+        console.error(err);
+        setLoading(false);
+        showHint('无法打开所选文件', 2200);
       });
     }
 
@@ -1677,7 +1824,7 @@
     }
 
     /* ======================= 拍照页 ======================= */
-    function addImagePage(img) {
+    function createImagePage(img) {
       if (!S.baseW || S.baseW <= 0) {
         var vw = window.innerWidth;
         S.baseW = Math.max(400, vw - 28);
@@ -1693,8 +1840,6 @@
       el.appendChild(canvas);
       content.appendChild(el);
 
-      var first = S.pages.length === 0;
-
       S.pages.push({
         type: 'image',
         image: img,
@@ -1705,8 +1850,14 @@
         rendered: false,
         rendering: false,
         token: 0,
-        renderTask: null
+        renderTask: null,
+        rot: 0
       });
+    }
+
+    function addImagePage(img) {
+      var first = S.pages.length === 0;
+      createImagePage(img);
 
       recalcOffsets();
 
@@ -1739,7 +1890,7 @@
       var stroke = {
         page: hit.page,
         color: S.penColor,
-        size: S.penSize / S.zoom,
+        size: S.penSize / (S.fitZoom || 1),
         type: S.penType,
         t0: performance.now(),
         pid: drawPid,
@@ -1758,68 +1909,141 @@
 
       var pts = activeStroke.pts;
       var last = pts[pts.length - 1];
+      activeStroke.raw = { x: hit.x, y: hit.y };
 
       var dx = (hit.x - last.x) * S.zoom;
       var dy = (hit.y - last.y) * S.zoom;
-      if (dx * dx + dy * dy < MIN_PX_DIST2) return;
+      var d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 1.2) return;
 
-      pts.push({ x: hit.x, y: hit.y });
+      /* 自适应低通：慢速时强平滑（抹掉手抖/触点噪声），快速时几乎跟手 */
+      var a = d / (d + 3.5);
+      if (d * a < 0.7) return;
+      pts.push({ x: last.x + (hit.x - last.x) * a, y: last.y + (hit.y - last.y) * a });
       scheduleDrawInk();
     }
 
     function endStroke() {
       if (activeStroke) {
+        /* 收笔：补上最后一段，消除平滑带来的滞后 */
+        var raw = activeStroke.raw, pts = activeStroke.pts;
+        if (raw && pts.length > 1) {
+          var l = pts[pts.length - 1];
+          var ex = (raw.x - l.x) * S.zoom, ey = (raw.y - l.y) * S.zoom;
+          if (ex * ex + ey * ey > 0.64) {
+            pts.push({ x: l.x + (raw.x - l.x) * 0.6, y: l.y + (raw.y - l.y) * 0.6 });
+            pts.push({ x: raw.x, y: raw.y });
+          }
+        }
+        activeStroke.raw = null;
         activeStroke = null;
         invalidateInkCache();
         scheduleDrawInk();
       }
     }
 
+    /* 把笔画按"是否在擦除区域内"精确切开：
+       沿线段采样找出进出点，再二分求出边界，在边界处插入新端点，
+       切口恰好落在擦除区域边缘，而不是最近的采样点。 */
+    function splitStroke(pts, inside, step) {
+      var segs = [], cur = null, hit = false;
+      var prev = pts[0], state = inside(prev.x, prev.y);
+      if (state) hit = true; else cur = [prev];
+
+      for (var j = 1; j < pts.length; j++) {
+        var p = pts[j];
+        var curIn = inside(p.x, p.y);
+        var dx = p.x - prev.x, dy = p.y - prev.y;
+        var len = Math.sqrt(dx * dx + dy * dy);
+        var n = Math.max(1, Math.ceil(len / step));
+        var t0 = 0, s0 = state;
+
+        for (var k = 1; k <= n; k++) {
+          var t1 = k / n;
+          var s1 = (k === n) ? curIn : inside(prev.x + dx * t1, prev.y + dy * t1);
+          if (s1 !== s0) {
+            var lo = t0, hi = t1;
+            for (var it = 0; it < 10; it++) {
+              var mid = (lo + hi) * 0.5;
+              if (inside(prev.x + dx * mid, prev.y + dy * mid) === s0) lo = mid; else hi = mid;
+            }
+            var tb = s0 ? hi : lo;   /* 取区域外侧的那个点 */
+            var B = { x: prev.x + dx * tb, y: prev.y + dy * tb };
+            if (!s0) {               /* 外 → 内 */
+              if (cur) { cur.push(B); segs.push(cur); }
+              cur = null;
+            } else {                 /* 内 → 外 */
+              cur = [B];
+            }
+            hit = true;
+            s0 = s1;
+          }
+          t0 = t1;
+        }
+
+        if (!curIn) {
+          if (!cur) cur = [];
+          cur.push(p);
+        }
+        prev = p; state = curIn;
+      }
+      if (cur && cur.length) segs.push(cur);
+
+      var pieces = [];
+      for (var m = 0; m < segs.length; m++) if (segs[m].length > 1) pieces.push(segs[m]);
+      return { hit: hit, pieces: pieces };
+    }
+
+    /* 橡皮：圆形区域沿上一个位置到当前位置扫过（胶囊形），快速划动也不漏擦；
+       判定半径 = 橡皮半径 + 笔画半宽，圈内的墨迹被完整擦掉 */
     function eraseAt(sx, sy) {
-      if (lastErasePt) {
-        var ddx = sx - lastErasePt.x, ddy = sy - lastErasePt.y;
-        if (ddx * ddx + ddy * ddy < 30) return;
+      var prevPt = lastErasePt;
+      if (prevPt) {
+        var ddx = sx - prevPt.x, ddy = sy - prevPt.y;
+        if (ddx * ddx + ddy * ddy < 1) return;
       }
       lastErasePt = { x: sx, y: sy };
+      if (!S.pages.length || !S.strokes.length) return;
 
-      var hit = screenToPage(sx, sy);
-      if (!hit) return;
+      var z = S.zoom;
+      var r = (S.eraserSize * 0.5) / z;
+      var bx = (sx - S.tx) / z, by = (sy - S.ty) / z;
+      var ax = prevPt ? (prevPt.x - S.tx) / z : bx;
+      var ay = prevPt ? (prevPt.y - S.ty) / z : by;
+      var abx = bx - ax, aby = by - ay;
+      var ab2 = abx * abx + aby * aby;
+      var minX = Math.min(ax, bx), maxX = Math.max(ax, bx);
+      var minY = Math.min(ay, by), maxY = Math.max(ay, by);
 
-      var r = (S.eraserSize * 0.5) / S.zoom;
-      var r2 = r * r;
-      var out = [];
-      var changed = false;
+      var out = [], changed = false;
 
       for (var i = 0; i < S.strokes.length; i++) {
         var st = S.strokes[i];
-        if (st.page !== hit.page) { out.push(st); continue; }
+        var pg = S.pages[st.page];
+        if (!pg || st === activeStroke) { out.push(st); continue; }
 
-        var segs = [];
-        var cur = null;
-        for (var j = 0; j < st.pts.length; j++) {
-          var pt = st.pts[j];
-          var ex = pt.x - hit.x, ey = pt.y - hit.y;
-          if (ex * ex + ey * ey <= r2) {
-            if (cur && cur.length) segs.push(cur);
-            cur = null;
-            changed = true;
-          } else {
-            if (!cur) cur = [];
-            cur.push(pt);
-          }
-        }
-        if (cur && cur.length) segs.push(cur);
+        var off = pg.offsetY;
+        var R = r + st.size * 0.5;
+        var bb = strokeBBox(st);
+        if (bb.x1 < minX - R || bb.x0 > maxX + R ||
+            bb.y1 + off < minY - R || bb.y0 + off > maxY + R) { out.push(st); continue; }
 
-        for (var k = 0; k < segs.length; k++) {
-          if (segs[k].length) {
-            out.push({
-              page: st.page,
-              color: st.color,
-              size: st.size,
-              type: st.type,
-              pts: segs[k]
-            });
+        var R2 = R * R;
+        var res = splitStroke(st.pts, function (x, y) {
+          var py = y + off;
+          var t = 0;
+          if (ab2 > 1e-9) {
+            t = ((x - ax) * abx + (py - ay) * aby) / ab2;
+            t = t < 0 ? 0 : (t > 1 ? 1 : t);
           }
+          var ex = x - (ax + abx * t), ey = py - (ay + aby * t);
+          return ex * ex + ey * ey <= R2;
+        }, 3 / z);
+
+        if (!res.hit) { out.push(st); continue; }
+        changed = true;
+        for (var k = 0; k < res.pieces.length; k++) {
+          out.push({ page: st.page, color: st.color, size: st.size, type: st.type, pts: res.pieces[k] });
         }
       }
 
@@ -2317,20 +2541,6 @@
         return false;
       }
 
-      /* 相邻两点之间的线段穿过擦除区域时，也要断开 */
-      function segHits(x0, y0, x1, y1, pad) {
-        if ((x0 < bx0 - pad && x1 < bx0 - pad) || (x0 > bx1 + pad && x1 > bx1 + pad) ||
-            (y0 < by0 - pad && y1 < by0 - pad) || (y0 > by1 + pad && y1 > by1 + pad)) return false;
-        var dx = x1 - x0, dy = y1 - y0, len = Math.sqrt(dx * dx + dy * dy);
-        if (len < 6) return false;
-        var n = Math.min(48, Math.ceil(len / 6));
-        for (var q = 1; q < n; q++) {
-          var t = q / n;
-          if (inShapes(x0 + dx * t, y0 + dy * t, pad)) return true;
-        }
-        return false;
-      }
-
       var z = S.zoom, tx = S.tx, ty = S.ty;
       var out = [], changed = false;
 
@@ -2346,35 +2556,16 @@
             oy + z * bb.y1 + mg < by0 || oy + z * bb.y0 - mg > by1) { out.push(st); continue; }
 
         var pad = st.size * z * 0.5;
-        var pts = st.pts, segs = [], cur = null, hit = false, lx = 0, ly = 0;
+        var res = splitStroke(st.pts, function (x, y) {
+          var X = tx + z * x, Y = oy + z * y;
+          return X >= bx0 - pad && X <= bx1 + pad && Y >= by0 - pad && Y <= by1 + pad &&
+                 inShapes(X, Y, pad);
+        }, 2 / z);
 
-        for (var j = 0; j < pts.length; j++) {
-          var sx = tx + z * pts[j].x, sy = oy + z * pts[j].y;
-          var inside = sx >= bx0 - pad && sx <= bx1 + pad && sy >= by0 - pad && sy <= by1 + pad &&
-                       inShapes(sx, sy, pad);
-          if (inside) {
-            if (cur && cur.length) segs.push(cur);
-            cur = null;
-            hit = true;
-          } else {
-            if (!cur) cur = [];
-            else if (segHits(lx, ly, sx, sy, pad)) {
-              if (cur.length) segs.push(cur);
-              cur = [];
-              hit = true;
-            }
-            cur.push(pts[j]);
-          }
-          lx = sx; ly = sy;
-        }
-        if (cur && cur.length) segs.push(cur);
-
-        if (!hit) { out.push(st); continue; }
+        if (!res.hit) { out.push(st); continue; }
         changed = true;
-        for (var m2 = 0; m2 < segs.length; m2++) {
-          if (segs[m2].length > 1) {
-            out.push({ page: st.page, color: st.color, size: st.size, type: st.type, pts: segs[m2] });
-          }
+        for (var m2 = 0; m2 < res.pieces.length; m2++) {
+          out.push({ page: st.page, color: st.color, size: st.size, type: st.type, pts: res.pieces[m2] });
         }
       }
 
@@ -2500,7 +2691,7 @@
     });
 
     function updatePenPreview() {
-      var d = Math.max(3, Math.min(26, S.penSize * 1.9));
+      var d = Math.max(1.5, Math.min(28, S.penSize * 2));
       penPrev.style.width = d + 'px';
       penPrev.style.height = d + 'px';
       penPrev.style.setProperty('--c', S.penColor);
@@ -2628,7 +2819,7 @@
     }
 
     function applyPenSlider() {
-      S.penSize = 1.5 + (S.penSliderVal / 100) * 12;
+      S.penSize = penSizeFromT(S.penT);
       updatePenPreview();
     }
 
@@ -2655,37 +2846,69 @@
     /* ======================= 二级面板 ======================= */
     function isPopoverOpen() { return popover.classList.contains('show'); }
 
+    var positionedPane = null;
+
     function positionPopover() {
+      var wasOpen = popover.classList.contains('show');
       popover.classList.add('show');
       popover.style.visibility = 'hidden';
+
+      var pane = popover.querySelector('.pane.show');
+      /* 测量时临时清空 max-height 会把滚动容器瞬间展开，scrollTop 被钳到 0。
+         同一面板已展开时（如拖动折射滑块）记下滚动位置并在定位完成后还原；
+         新开面板或切换面板仍照旧从顶部显示。 */
+      var paneScrollTop = (wasOpen && pane && pane === positionedPane) ? pane.scrollTop : 0;
+      if (pane) pane.style.maxHeight = '';
 
       var pr = popover.offsetWidth;
       var ph = popover.offsetHeight;
       var r = dockEl.getBoundingClientRect();
       var vw = window.innerWidth, vh = window.innerHeight;
+      var M = 10, G = 12;
 
       var x, y, px = 0, py = 0, ox = '50%', oy = '50%';
+      var avail, above = true;
+
+      if (currentSide === 'left' || currentSide === 'right') {
+        avail = vh - M * 2;
+      } else {
+        var spaceAbove = r.top - G - M;
+        var spaceBelow = vh - r.bottom - G - M;
+        if (ph <= spaceAbove) { above = true; avail = spaceAbove; }
+        else if (ph <= spaceBelow) { above = false; avail = spaceBelow; }
+        else if (spaceAbove >= spaceBelow) { above = true; avail = spaceAbove; }
+        else { above = false; avail = spaceBelow; }
+      }
+
+      /* 放不下时限制面板高度，内部可上下滑动 */
+      if (pane && ph > avail) {
+        var cs = getComputedStyle(popover);
+        var chrome = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) + 2;
+        pane.style.maxHeight = Math.max(96, avail - chrome) + 'px';
+        ph = popover.offsetHeight;
+      }
 
       if (currentSide === 'left') {
-        x = r.right + 12;
+        x = r.right + G;
         y = r.top + r.height / 2 - ph / 2;
         px = -18; py = 0; ox = '0%'; oy = '50%';
       } else if (currentSide === 'right') {
-        x = r.left - pr - 12;
+        x = r.left - pr - G;
         y = r.top + r.height / 2 - ph / 2;
         px = 18; py = 0; ox = '100%'; oy = '50%';
       } else {
         x = r.left + r.width / 2 - pr / 2;
-        y = r.top - ph - 12;
-        px = 0; py = 18; ox = '50%'; oy = '100%';
-        if (y < 10) {
-          y = r.bottom + 12;
+        if (above) {
+          y = r.top - ph - G;
+          px = 0; py = 18; ox = '50%'; oy = '100%';
+        } else {
+          y = r.bottom + G;
           py = -18; oy = '0%';
         }
       }
 
-      x = clamp(x, 10, Math.max(10, vw - pr - 10));
-      y = clamp(y, 10, Math.max(10, vh - ph - 10));
+      x = clamp(x, M, Math.max(M, vw - pr - M));
+      y = clamp(y, M, Math.max(M, vh - ph - M));
 
       popover.style.left = x + 'px';
       popover.style.top = y + 'px';
@@ -2693,6 +2916,9 @@
       popover.style.setProperty('--pop-x', px + 'px');
       popover.style.setProperty('--pop-y', py + 'px');
       popover.style.visibility = '';
+
+      if (pane) pane.scrollTop = paneScrollTop;
+      positionedPane = pane;
 
       if (panePen.classList.contains('show')) movePenBar(true);
       updatePopoverRefraction();
@@ -2706,13 +2932,18 @@
       panePen.classList.toggle('show', name === 'pen');
       paneEraser.classList.toggle('show', name === 'eraser');
       paneSet.classList.toggle('show', name === 'set');
+      paneRot.classList.toggle('show', name === 'rot');
       if (name === 'set') updateFsBtnUI();
       positionPopover();
     }
 
+    function isToolPaneOpen(paneEl) {
+      return isPopoverOpen() && paneEl.classList.contains('show');
+    }
+
     btnPen.addEventListener('click', function (e) {
       e.stopPropagation();
-      if (S.tool === 'pen') {
+      if (S.tool === 'pen' && isToolPaneOpen(panePen)) {
         S.tool = null;
         updateToolUI();
         hidePopover();
@@ -2729,7 +2960,7 @@
 
     btnEraser.addEventListener('click', function (e) {
       e.stopPropagation();
-      if (S.tool === 'eraser') {
+      if (S.tool === 'eraser' && isToolPaneOpen(paneEraser)) {
         S.tool = null;
         updateToolUI();
         hidePopover();
@@ -2740,6 +2971,16 @@
         showPane('eraser');
         scheduleSave();
       }
+    });
+
+    btnRot.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (isPopoverOpen() && paneRot.classList.contains('show')) {
+        hidePopover();
+        return;
+      }
+      updateRotUI();
+      showPane('rot');
     });
 
     btnSet.addEventListener('click', function (e) {
@@ -2759,7 +3000,8 @@
     }, true);
 
     penSlider.addEventListener('input', function () {
-      S.penSliderVal = parseInt(penSlider.value, 10) || 1;
+      S.penT = parseInt(penSlider.value, 10);
+      if (isNaN(S.penT)) S.penT = 0;
       applyPenSlider();
       if (S.tool !== 'pen') { S.tool = 'pen'; updateToolUI(); }
       scheduleSave();
@@ -2820,10 +3062,102 @@
       });
     });
 
+    /* ============================================================
+       旋转页面（PDF 页 / 图片页）
+       · 页面内容、笔迹一起旋转，笔迹按页面缩放比例同步缩放
+       · 默认只旋转当前页，可切换为全部页面
+       ============================================================ */
+    function setSwitch(el, on) {
+      el.classList.toggle('on', !!on);
+      el.setAttribute('aria-checked', on ? 'true' : 'false');
+    }
+
+    function updateRotUI() { setSwitch(rotAllSw, S.rotateAll); }
+
+    /* 指定旋转次数下，页面的 高/宽 比 */
+    function pageAspect(p, rot) {
+      if (p.type === 'image') {
+        var w = p.image.naturalWidth, h = p.image.naturalHeight;
+        return (rot & 1) ? (w / h) : (h / w);
+      }
+      var vp = p.pdfPage.getViewport({ scale: 1, rotation: (((p.pdfPage.rotate || 0) + rot * 90) % 360 + 360) % 360 });
+      return vp.height / vp.width;
+    }
+
+    function rotatePages(dir) {
+      if (!S.pages.length) { showHint('请先打开文件', 1400); return; }
+
+      updateCurrentPage();
+      var cur = S.currentPage;
+      var W = S.baseW;
+      var info = {};
+      var targets = [];
+
+      for (var i = 0; i < S.pages.length; i++) {
+        if (S.rotateAll || i === cur) targets.push(i);
+      }
+
+      targets.forEach(function (idx) {
+        var p = S.pages[idx];
+        var oldH = p.h;
+        p.rot = (((p.rot || 0) + dir) % 4 + 4) % 4;
+        var newH = W * pageAspect(p, p.rot);
+        info[idx] = { oldH: oldH, k: W / oldH };
+
+        p.h = newH;
+        p.el.style.height = newH + 'px';
+        if (p.renderTask) { try { p.renderTask.cancel(); } catch (e) {} }
+        p.rendered = false;
+        p.token++;
+        p.canvas.width = 0;
+        p.canvas.height = 0;
+      });
+
+      /* 笔迹坐标一起旋转：顺时针 (x,y)→((H−y)k, xk)，逆时针 (x,y)→(yk, (W−x)k) */
+      for (var j = 0; j < S.strokes.length; j++) {
+        var st = S.strokes[j];
+        var inf = info[st.page];
+        if (!inf) continue;
+        var k = inf.k, H = inf.oldH, pts = st.pts;
+        for (var q = 0; q < pts.length; q++) {
+          var x = pts[q].x, y = pts[q].y;
+          if (dir > 0) { pts[q].x = (H - y) * k; pts[q].y = x * k; }
+          else         { pts[q].x = y * k;       pts[q].y = (W - x) * k; }
+        }
+        st.size *= k;
+        st.bb = null;
+        if (st.raw) st.raw = null;
+      }
+
+      recalcOffsets();
+      invalidateInkCache();
+      goToPage(cur);
+
+      /* 旋转入场：页面与笔迹一起柔和转入 */
+      var ease = 'cubic-bezier(.16,1,.3,1)';
+      targets.forEach(function (idx) {
+        try {
+          S.pages[idx].el.animate([
+            { transform: 'rotate(' + (-dir * 16) + 'deg) scale(.92)', opacity: 0 },
+            { transform: 'rotate(0deg) scale(1)', opacity: 1 }
+          ], { duration: 380, easing: ease });
+        } catch (e) {}
+      });
+      try { ink.animate([{ opacity: 0 }, { opacity: 0 }, { opacity: 1 }], { duration: 380, easing: 'ease-out' }); } catch (e) {}
+    }
+
+    rotL.addEventListener('click', function (e) { e.stopPropagation(); rotatePages(-1); });
+    rotR.addEventListener('click', function (e) { e.stopPropagation(); rotatePages(1); });
+    rotAllSw.addEventListener('click', function (e) {
+      e.stopPropagation();
+      S.rotateAll = !S.rotateAll;
+      updateRotUI();
+      scheduleSave();
+    });
+
     /* 手掌擦除设置 */
     function updatePalmUI() {
-      palmBtn.textContent = S.palmErase ? '手掌擦除：开启' : '手掌擦除：关闭';
-      palmBtn.classList.toggle('off', !S.palmErase);
+      setSwitch(palmBtn, S.palmErase);
       palmSizeSlider.disabled = !S.palmErase;
     }
 
@@ -3377,6 +3711,7 @@
     }
 
     function initScaleSlider() {
+      penSlider.value = Math.round(S.penT);
       dockScaleSlider.value = Math.round(S.dockScale * 100);
       dockScaleVal.textContent = Math.round(S.dockScale * 100) + '%';
 
@@ -3398,6 +3733,7 @@
       palmSizeSlider.value = Math.round(S.palmThreshold);
       palmSizeVal.textContent = Math.round(S.palmThreshold) + 'px';
       updatePalmUI();
+      updateRotUI();
       syncAllRanges();
     }
 
@@ -3440,8 +3776,7 @@
 
     function updateFsBtnUI() {
       var fs = isFullscreen();
-      fsBtn.textContent = fs ? '退出全屏' : '进入全屏';
-      fsBtn.classList.toggle('exit', fs);
+      setSwitch(fsBtn, fs);
     }
 
     fsBtn.addEventListener('click', function (e) {
@@ -3467,9 +3802,9 @@
     emptyOpen.addEventListener('click', pickFile);
 
     fileInput.addEventListener('change', function () {
-      var f = fileInput.files && fileInput.files[0];
-      if (f) loadPDF(f);
+      var list = fileInput.files ? Array.prototype.slice.call(fileInput.files) : [];
       fileInput.value = '';
+      if (list.length) openFiles(list);
     });
 
     /* 拖拽文件 */
@@ -3500,13 +3835,11 @@
       dragDepth = 0;
       dropzone.classList.remove('active');
 
-      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (!f) return;
+      var list = e.dataTransfer && e.dataTransfer.files ? Array.prototype.slice.call(e.dataTransfer.files) : [];
+      if (!list.length) return;
 
       tryFullscreen();
-
-      if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) loadPDF(f);
-      else showHint('请拖入 PDF 文件', 1800);
+      openFiles(list);
     });
 
     /* 窗口变化 */
